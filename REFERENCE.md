@@ -885,6 +885,13 @@ publishes, and MUST keep every field it wrote in agreement with the lane's curre
 and MUST NOT overwrite a record whose `writer` names another producer unless that producer is
 absent from `lane_status`. Records with no `writer` are legacy: a producer MAY replace them.
 
+**S2a.** Tag readers, tracker syncs and screens are not producers by default. SPEC.md §5 says
+when each one writes: a passive source hands its data to the producer, an interactive client
+sends edits through the producer's commands, and either writes `lane_data` itself only when the
+machine has no producer, as a gap-filler that yields once one appears. A non-producer's
+contribution can live inside the producer's record (`spool`, `tag`) without taking ownership of
+it.
+
 **S3.** The record key is advisory; consumers MUST use the `lane` field. Keys SHOULD follow
 `docs/specs/filament_slots.md` §4 (`T<n>` for tool changers, `laneN` otherwise).
 

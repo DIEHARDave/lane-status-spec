@@ -149,6 +149,19 @@ OrcaSlicer's reader.
 
 - **One writer per machine.** A producer MUST set `writer` and MUST NOT overwrite records another
   live producer wrote.
+- **Passive sources hand data to the producer.** A component that is not the producer and does
+  not talk to the user, such as a tag reader or a spool-tracker sync, SHOULD pass what it learns
+  to the producer, for example through a command the producer lists in `capabilities`, instead
+  of writing `lane_data` itself. It SHOULD write records only when the machine has no producer.
+- **Interactive clients edit through the producer.** A client where the user edits a lane, such
+  as a touchscreen or a web UI, SHOULD send edits through the producer's own commands when the
+  machine has one (AFC's and Happy Hare's, for example). When the filament system publishes no
+  lane surface at all, the client MAY act as the producer to fill that gap. It then sets
+  `writer` to its own name and follows every `lane_data` rule in this section and section 6.
+  It cannot publish `lane_status`, which needs a Klipper module.
+- **Yield to a producer.** A component writing because no producer is present MUST NOT
+  overwrite a record another producer wrote, and SHOULD stop writing once a producer appears
+  (a `lane_status` object, or records whose `writer` names another producer).
 - **One record per lane**, kept in step with the loaded spool. An empty lane keeps its keys, with
   `null` values.
 - **Ignore the key.** Writers disagree (`lane0`, `lane1`, `T0`, `"0"`); consumers MUST read
