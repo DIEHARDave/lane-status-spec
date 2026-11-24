@@ -1,4 +1,4 @@
-# RFC 0001: Lane Status Surface
+# Lane Status Surface
 
 | | |
 |---|---|
@@ -32,7 +32,7 @@ Slicers get little. OrcaSlicer reads six fields from Moonraker's `lane_data` nam
 of 2026-10-26 can match an exact filament preset from a `filament_id` there. Its own docs say
 "the schema is not standardized across the Klipper ecosystem." It writes nothing back.
 
-This RFC writes down the contract those modules never had:
+This draft writes down the contract those modules never had:
 
 - one surface any filament system can publish and any UI, screen or slicer can read;
 - today's Mainsail and Fluidd panels keep working unchanged;
@@ -121,7 +121,7 @@ Happy Hare spellings and what each existing module maps them to, are in REFERENC
 A consumer reads `lane_status.kind`. If it is `status_only` and the consumer has its own backend
 for `wraps`, it SHOULD use that backend. A consumer that reads only `AFC` looks for
 `lane_status_kind`; real AFC never sends it, so absent means real hardware. Guessing from which
-other objects are present stays only as a fallback for producers that predate this RFC.
+other objects are present stays only as a fallback for producers that predate this draft.
 
 ### 5. Slicer data: `lane_data`
 
@@ -188,7 +188,7 @@ A lane points at a spool; it does not copy a tracker's data model.
     the same for its own extras). It MUST NOT overwrite a non-empty value.
   - The rules on `filament_id` in section 5 apply to the extra as well: a string id naming one
     product, never a `GF*` code passed through untranslated.
-- **Tracker internals stay outside this RFC.** Anything tracker-specific copied into a record
+- **Tracker internals stay outside this draft.** Anything tracker-specific copied into a record
   MUST be vendor-prefixed (section 7).
 - **Tags are physical identity.** An NFC/RFID reading goes in `tag` (`{format, uid, data}`). A
   tag MAY resolve to a tracker spool, for example through Spoolman's tag table. Where a tag and
@@ -224,7 +224,7 @@ Consumers ignore unknown keys. Vendor-specific keys MUST be prefixed `<vendor>_`
 - **Real AFC:** unaffected. A producer stands down when an `AFC` object already exists.
 - **Happy Hare:** unaffected. REFERENCE.md Part B §7a maps lanes, presence, filament fields,
   tool maps and commands to its `mmu` fields and names the gaps (lane to extruder, runout
-  groups), so a consumer can read most of a Happy Hare printer through this RFC's terms.
+  groups), so a consumer can read most of a Happy Hare printer through this draft's terms.
 - **OrcaSlicer as shipped:** reads the six fields in section 5 today. Everything else is ignored
   until it opts in.
 - **Existing `lane_data` writers:** records without `writer` are treated as legacy and still read.
@@ -238,7 +238,7 @@ native tags (v0.27.0). Each is described from source in REFERENCE.md.
 
 ## Unresolved questions
 
-1. The name of this RFC, and of the `afc` compatibility profile. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/2))
+1. The name of this draft, and of the `afc` compatibility profile. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/2))
 2. Should a status-only producer publish the `afc` profile at all, given every panel button it
    can't serve must refuse? Or publish only `lane_status`? ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/3))
 3. When a consumer has a native backend for what a status-only producer wraps, should the native
