@@ -892,8 +892,9 @@ machine has no producer, as a gap-filler that yields once one appears. A non-pro
 contribution can live inside the producer's record (`spool`, `tag`) without taking ownership of
 it.
 
-**S3.** The record key is advisory; consumers MUST use the `lane` field. Keys SHOULD follow
-`docs/specs/filament_slots.md` §4 (`T<n>` for tool changers, `laneN` otherwise).
+**S3.** The record key is advisory; consumers MUST use the `lane` field. Which key a writer
+SHOULD use is still open (SPEC.md unresolved question 5); V-S3 surveys the styles in use and
+lists the options.
 
 ## 7. Record fields
 
@@ -959,17 +960,69 @@ HelixScreen's existing `helix_*` keys conform.
   `scan_time` and `td` (it sets `spool_id` to `null` and keeps `lane` and `extruder_index`),
   and Happy Hare writes `nozzle_temp` 200 when `gate_temperature` is missing.
 
-**V-S3.** Keys vary widely in the wild:
-- Happy Hare: `lane{gate}`, 0-based (`lane0`).
-- AFC `main`: the user's lane name (often `lane1`, but `E2` and others are possible).
-- AFC `DEV`: `T(n)`, one record per mapped tool.
-- Mainsail: `T<n>`.
-- HelixScreen: `laneN` (1-based) or `T<n>`.
-- spoolman-lane-sync: bare `"0"`, `"1"`, plus a non-record `source` key.
+**V-S3.** Keys vary widely in the wild. The survey below covers every `lane_data` writer
+found and the native firmware of the multi-material systems those writers sit on. For each it
+gives the record key, the `lane` value inside the record, the system's own slot identifier, and
+what a user sees. "0" and "1" give the base of each number.
+
+`lane_data` writers [V unless marked]:
+
+| Writer | Record key | `lane` value | Own lane or slot name | User sees | Source |
+|---|---|---|---|---|---|
+| AFC `main` | The lane's config name, usually `lane1`… (1) | Mapped tool number, `"0"` for `T0` | `[AFC_stepper lane1]`; slot in unit `unit: Turtle_1:1` (1); tools `T0`… assigned in lane order (0) | `lane1`… in the Mainsail and Fluidd panels; `T0`… | `extras/AFC_lane.py#send_lane_data`, `#AFCLane.__init__`; `extras/AFC_functions.py#TcmdAssign`; `templates/AFC_Turtle_1.cfg` (`5ea84ea`) |
+| AFC `DEV` | `T<n>`, one per mapped tool (0) | `n` | as `main` | as `main` | `extras/AFC_lane.py#send_lane_data`; `tests/test_AFC_lane.py` (`e0dd6ad`) |
+| Happy Hare | `lane<gate>`, `lane0`… (0) | gate, `"0"`… | gates `0`…`num_gates-1` (0); `ttg_map` identity by default | "Gate 0", "T0 (Gate0)" (0) | `components/mmu_server.py#push_lane_data`; `config/base/mmu.cfg` `default_ttg_map`; `config/macros/mmu_software.cfg` (`91a31dc`) |
+| Mainsail (Spoolman tool changers) | `T<n>` (0) | `n` | tools | `T0`… | Mainsail #2510 |
+| spoolman-lane-sync | `"0"`, `"1"`… (0) | `"0"`… | none | none | `1660093` |
+| zmod_afclite | `lane<slot>`, `lane1`…`lane4` (1) | slot − 1, `"0"`… | `AFC_lane E0`…`E3` (0) | Mainsail's panel shows `E0`…; zmod calls the ports 1–4 | `zmod_afclite.py` (`dabe447`) |
+| Z-Mod's built-in AFC emulation | `lane0`…`lane3` in its docs (0); see the note below | `"0"`… | `AFC_lane lane1`…`lane16` (1) | `lane1`…; "spool №1"… | zmod `docs/en/AD5X.md`, `docs/en/C5PRO.md` (`2bda2fa`); `z_ad5x` `.shell/zmod_afc.py` (`206c1bd`) |
+| Kiln OS `kiln_lanes` (KILN_AFCLite writes none) | `lane1`…`lane4` (1) | slot − 1, `"0"`… | KILN_AFCLite `E0`…`E3` (0) | "IFS slot 1–4", "T0 = slot 1" | `moonraker/components/kiln_lanes.py`, `docs/orcaslicer.md` (djvalic/kiln-os `258b6f0`); `extras/kiln_afclite.py` (`bb9fb05`) |
+| HelixScreen | `lane<i+1>` on filament systems (1), `T<i>` on tool changers (0) | `i`, `"0"`… | the backend's own | the backend's own | `src/printer/filament_slot_override_store.cpp#format_lane_key`, `docs/specs/filament_slots.md` §4 |
+| paxx U1 AFC-Lite | writes none (`lane_data_enabled = False`) | | `AFC_lane E0`…`E3`, `lane: 0`… (0) | `E0`… in the panels | `31-feature-afc-lite/.../AFC.py`, `afc.cfg` (`a6423a8`) |
+
+Native firmware, which writes no `lane_data` of its own:
+
+| System | Native slot identifier | Tools | User sees | Source |
+|---|---|---|---|---|
+| Creality CFS (K2, Hi) | `box` object units `T1`…`T4` (1), each with per-slot arrays (0); slots named `T1A`…`T4D` | `T0`… mapped to boxes (0) | "1A"…"4D" [I: from HelixScreen's docs and OrcaSlicer, not a Creality source] | Orca `CrealityCfs.cpp` (`slot_index = (unit-1)*4 + i`), `CrealityPrintAgent.cpp` (`v2.5.2`); Creality's module is closed |
+| Snapmaker U1 | `print_task_config` arrays and `filament_detect` channels `0`…`3` (0); extruders `extruder`, `extruder1`… | `T0`…`T3` (0) | "Feeder 1"… [I: stock screen, as HelixScreen documents it] | Orca `SnapmakerPrinterAgent.cpp`; paxx `docs/design/filament_detect.md` (`a6423a8`) |
+| QIDI Box | `box_stepper slot0`…`slot15` (0, across boxes); `value_t<n> = "slot<m>"` | `T0`… (0) | "1A"…"4D" in fault text | qidi-community/Plus4-Wiki `box_stepper.py`, `box_macros.cfg` (`d034a4d`); Orca `QidiPrinterAgent.cpp#build_tool_slot_script` |
+| FlashForge AD5X IFS | ports `PRUTOK=1`…`4` (1); `ifs.tool_map {"0": 1, …}` | `T0`…`T3` (0) | "spool №1"…; Z-Mod option `COLOR_MENU_1_BASED` switches the menu between "T0" and "Color 1" | Z-Mod `zmod_ifs.py`, `docs/en/Global.md`; Forge-X (DrA1ex/ff5m `ed884d1`) `docs/IFS_MODULE.md` |
+| Prusa MMU3 | no Klipper module found; Happy Hare lists it as not yet supported | | | Happy Hare `config/base/mmu_hardware.cfg` |
+| Bambu AMS (not Klipper; slicers copy it) | `ams_id` and tray `0`…`3` (0) | | "A1"…"A4" (letter per unit, 1-based tray) | Orca `GUI/Plater.cpp#get_ams_name` |
+
+OrcaSlicer's reader takes `lane` as a 0-based tray index, lays four trays per unit by
+`lane / 4` and `lane % 4`, never reads the key, and shows the tray as "A1"…, so `lane` `"0"`
+appears as A1 (`MoonrakerPrinterAgent.cpp#fetch_moonraker_filament_data`, `#build_ams_payload`;
+`GUI/Plater.cpp#get_ams_name`; `docs/HLSD/filament_id.md`, `v2.5.2`).
+
+Note on Z-Mod: its docs give `lane0`… keys while its own AFC lanes are named `lane1`…, and the
+`zmod_afc.py` read reports `lane_data_enabled: False` with no database writes. The module that
+writes those records was not found in source, so that row's key is from the docs only.
+
+What the survey shows:
+- **The `lane` value is 0-based everywhere.** Every writer, and Orca's reader, agree.
+- **Tool numbers are 0-based everywhere** (`T0`).
+- **Record keys split.** 1-based `laneN`: AFC `main` (by its templates' lane names),
+  zmod_afclite, `kiln_lanes`, HelixScreen. 0-based: Happy Hare, Z-Mod's docs,
+  spoolman-lane-sync. `T<n>`: AFC `DEV`, Mainsail, HelixScreen on tool changers.
+- **Users mostly see 1-based slots** (AFC `lane1`, Orca "A1", CFS and QIDI "1A", AD5X "spool
+  №1", U1 "Feeder 1") and 0-based tools. Happy Hare is the exception: it shows "Gate 0".
+- **Native slot indices split** too: Happy Hare, the U1, QIDI and Bambu count from 0; the CFS
+  units, the AD5X ports and AFC's unit slots count from 1.
+
+Options for a key rule:
+1. **`lane<n>` with `n` equal to `lane` (0-based).** Matches Happy Hare and the `lane` value,
+   so key and field never disagree. Every 1-based writer would change its keys, and the key
+   then reads one less than the label users see.
+2. **The key is `lane_name`.** Matches AFC `main`, and joins the record to `lane_status`
+   without a lookup; the key is whatever the producer calls the lane, so it is neither 0- nor
+   1-based by rule. Writers that name lanes `E0` or `lane1` keep them.
+3. **No key rule.** Rely on one writer per machine (SPEC.md §5) and on consumers reading
+   `lane`, which already stops duplicates when the other writers hand their data to the
+   producer.
 
 Consumers MUST ignore the key, read `lane` (S3), and skip non-object values.
-`docs/specs/filament_slots.md` §4 should be corrected to record Happy Hare's 0-based keys
-[V `mmu_server.py#push_lane_data`].
 
 ## 7a. Bridge: `lane_status` / `afc` profile ↔ Happy Hare `mmu`
 
@@ -1110,6 +1163,7 @@ Smallest first. Items 1 and 2 also work for every existing `lane_data` writer.
 | §4 write paths | **Sourced**: `DeviceManager.cpp` (`ams_filament_setting`, `extrusion_cali_sel`), `DevMappingNozzle.cpp`, `CrealityPrint.cpp#start_print_commands`, `MoonrakerPrinterAgent.cpp#handle_request`, `PrinterAgentPluginCapability.cpp`. The G-code header alternative is a **proposal** |
 | §5 transport analysis | Facts **sourced** as tagged; conclusions **inference** |
 | §6-§10 | **Proposal**. The Group 1 fields in §7, and their Orca and writer columns, are sourced |
+| §7 V-S3 key survey | **Sourced** at the revisions in its tables (read 2026-11-24): AFC `5ea84ea` and `DEV` `e0dd6ad`; Happy Hare `91a31dc`; Orca `v2.5.2` `f92a7c065c`; zmod_afclite `dabe447`; Z-Mod `2bda2fa` docs and `z_ad5x` `206c1bd`; Kiln OS `258b6f0`; KILN_AFCLite `bb9fb05`; paxx `a6423a8`; DrA1ex/ff5m `ed884d1`; qidi-community/Plus4-Wiki `d034a4d`. Rows marked [I] take the screen label from HelixScreen's docs, not a vendor source. The options are **proposal** |
 | §11 | **Proposal** |
 | ACE, Prusa MMU, OpenPrintTag, OpenSpool in Orca | **Sourced absence** (grep of `main`, issue search). Prusa's own slicer and Connect were not examined |
 | §2a Happy Hare facts | **Sourced**: Happy-Hare `main` `70aa90fb`: `components/mmu_server.py` (header, remote methods, `push_lane_data`, pre-processor regexes), `extras/mmu/commands/mmu_slicer_tool_map.py`, `mmu_gate_map.py`, `mmu_ttg_map.py`, `mmu_gate_maps.py#get_status`, `mmu_controller.py` status, `mmu_constants.py` (AUTOMAP, Spoolman modes), `mmu_gate_maps.py#restore_automap_option`, `config/macros/mmu_misc.cfg` (`MMU_REMAP_TTG`); Moonraker PR #962 diff + `file_manager/metadata.py` and commit `5b92e52e`; Mainsail `StartPrintDialogMmu.vue`, `MmuEditTtgMapDialog.vue`; Orca PR #12307 (title only) |

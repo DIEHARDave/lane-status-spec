@@ -277,7 +277,9 @@ native tags (v0.27.0). Each is described from source in REFERENCE.md.
    backend always win (section 4)? ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/4))
 4. How `writer` relates to spoolman-lane-sync's existing `source` key, and how ownership of
    `lane_data` is handed over. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/5))
-5. Should a `lane_data` key style be required, or is "ignore the key" enough? ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/6))
+5. Should a `lane_data` key style be required, or is "ignore the key" enough? Writers split
+   between 0-based and 1-based keys; REFERENCE.md Part B §7 V-S3 surveys them and lists the
+   options. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/6))
 6. Where the `lane_data` schema should live long term, for example Moonraker's
    `integrations.md`. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/7))
 7. Whether `spool: {tracker, id}` is the right shape for non-Spoolman trackers. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/8))
