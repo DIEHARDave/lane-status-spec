@@ -84,7 +84,8 @@ Every producer MUST publish a Klipper object named `lane_status`:
 
 #### 2.3 Compatibility profile `afc`
 
-Mainsail and Fluidd draw their filament panel when a Klipper object named `AFC` exists. A
+This is a transition profile. Mainsail and Fluidd draw their filament panel when a Klipper
+object named `AFC` exists, and they do not read `lane_status` yet. Until they do, a
 producer that wants those panels MAY publish `AFC`, one `AFC_unit <unit>` per unit and one
 `AFC_lane <lane>` per lane. These names are a wire format the UIs require, not a brand; the
 producer's own name, config and docs MUST NOT present it as AFC.
@@ -106,6 +107,12 @@ A status-only producer of this profile:
   panels' lane edit keeps Save disabled until the user types a weight, and a producer that
   refuses `SET_WEIGHT` then ends every such save in an error;
 - SHOULD add `"lane_status_kind": "status_only"` to `AFC` (section 4).
+
+A producer of this profile SHOULD let the user turn it off. Once current Mainsail and Fluidd
+read `lane_status` directly, a status-only producer SHOULD stop publishing the profile by
+default, and a later version of this RFC will deprecate it. Dropping it removes the panel
+buttons a status-only producer must refuse (section 3), and the reports AFC's maintainers get
+about modules that are not theirs.
 
 Field tables: REFERENCE.md, Part A §5.
 
@@ -229,7 +236,8 @@ Consumers ignore unknown keys. Vendor-specific keys MUST be prefixed `<vendor>_`
 
 ## Compatibility
 
-- **Current Mainsail and Fluidd:** unchanged; the `afc` profile is what they already read.
+- **Current Mainsail and Fluidd:** unchanged; the `afc` profile is what they already read. It
+  lasts until they read `lane_status` (section 2.3).
 - **Real AFC:** unaffected. A producer stands down when an `AFC` object already exists.
 - **Happy Hare:** unaffected. REFERENCE.md Part B §7a maps lanes, presence, filament fields,
   tool maps and commands to its `mmu` fields and names the gaps (lane to extruder, runout
@@ -248,8 +256,10 @@ native tags (v0.27.0). Each is described from source in REFERENCE.md.
 ## Unresolved questions
 
 1. The name of this RFC, and of the `afc` compatibility profile. ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/2))
-2. Should a status-only producer publish the `afc` profile at all, given every panel button it
-   can't serve must refuse? Or publish only `lane_status`? ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/3))
+2. The `afc` profile is a transition (section 2.3). What should end it: a `lane_status` panel
+   in Mainsail and Fluidd, a version of each, or something else? Until then, should a
+   status-only producer publish it by default, given every panel button it can't serve must
+   refuse? ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/3))
 3. When a consumer has a native backend for what a status-only producer wraps, should the native
    backend always win (section 4)? ([discussion](https://github.com/prestonbrown/lane-status-spec/discussions/4))
 4. How `writer` relates to spoolman-lane-sync's existing `source` key, and how ownership of

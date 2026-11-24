@@ -99,6 +99,8 @@ Mainsail and Fluidd never read this key. HelixScreen reads it to work out slot s
 ## 5. Compatibility profile `afc`
 
 This is the profile that makes **current Mainsail and Fluidd** draw their AFC panels unchanged.
+It is a transition profile: it lasts until those UIs read `lane_status`, and SPEC.md §2.3 says
+when a status-only producer drops it.
 The object names below are fixed by those UIs' source. They are a wire-format requirement, not
 a brand. The AFC project is ArmoredTurtle's AFC-Klipper-Add-On. A producer MUST NOT use that
 project's product names (AFC, Box Turtle, …) in its own module name, config section,
