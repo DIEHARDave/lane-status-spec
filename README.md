@@ -1,7 +1,8 @@
-# Lane Status Surface
+# Lane Status Surface RFC
 
-A draft open spec for publishing multi-material filament lane state from Klipper printers, so
-that web UIs, touchscreens and slicers can all see what is loaded in each lane.
+A draft RFC, written in the style of IETF RFCs but not numbered, for publishing multi-material
+filament lane state from Klipper printers, so that web UIs, touchscreens and slicers can all see
+what is loaded in each lane.
 
 Today each filament system exposes its lanes in its own shape: AFC and Happy Hare each have their
 own Klipper objects, and the Snapmaker U1 and the AD5X IFS have others again. Firmware mods work around this by
@@ -16,9 +17,9 @@ slicer needs to pick the right profile.
 
 ## Status
 
-Draft 0.1, for discussion. "Lane Status Surface" is a working name. Nothing here is endorsed
-by the AFC, Happy Hare, Moonraker, Mainsail, Fluidd or OrcaSlicer projects yet, and the point of
-publishing it is to get their input before anything is built.
+Lane Status Surface RFC, draft 0.1, for discussion. "Lane Status Surface" is a working name.
+Nothing here is endorsed by the AFC, Happy Hare, Moonraker, Mainsail, Fluidd or OrcaSlicer
+projects yet, and the point of publishing it is to get their input before anything is built.
 
 ## Contributing
 
