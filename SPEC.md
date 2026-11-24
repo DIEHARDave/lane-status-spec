@@ -132,6 +132,20 @@ This is live state only. Once a tag is tied to a lane, its identity goes in the 
 cannot tell which of the two lanes a tag is on. Happy Hare 4's per-gate and shared readers are
 the model (REFERENCE.md Part B §7a).
 
+#### 2.5 Filament box environment
+
+A producer whose units heat or monitor their filament MAY add `environment` to `lane_status`,
+every key present from the first status (section 2.2):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `environment.units` | object | Unit to `{heater, sensor}`: the Klipper object names of the unit's heater and of its temperature or humidity sensor, each `null` if it has none |
+| `environment.lanes` | object | Lane to `{drying, heater}`: `drying` is `""` (none), `queued`, `active`, `complete` or `canceled`; `heater` is the lane's own heater object when the unit heats lanes separately, else `null` |
+
+Temperatures, targets and humidity are not copied here: a consumer reads them from the named
+objects, which already publish them. A unit that dries all its lanes at once reports the same
+`drying` state for each. Happy Hare 4 is the model (REFERENCE.md Part B.I, C).
+
 ### 3. Commands
 
 A producer lists each command it implements in `capabilities`. The commands, with their AFC and

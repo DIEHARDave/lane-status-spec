@@ -638,6 +638,14 @@ array has `num_gates` entries and a config default `default_<attr>`.
     one UID in `gate_spool_rfid`. Nothing tag-related reaches `lane_data`.
   - SPEC section 2.4 (`lane_status.tags`) maps onto this: `readers` from the reader objects and
     `nfc_readers`, `lanes` from `gates`, `pending` from `pending_spool_id` and `shared.uid`.
+- **Drying** (`extras/mmu/unit/mmu_environment_manager.py`, Happy Hare 4). A unit names its
+  `filament_heater(s)` and `environment_sensor(s)` in `mmu_machine.unit_<i>`; with per-gate
+  heaters each gate has its own. `mmu.drying_state` is one string per gate, aggregated across
+  units: `""`, `queued`, `active`, `complete`, `canceled` (`DRYING_STATE_*`). The manager does
+  not copy temperature or humidity into its status; clients read the heater and sensor objects
+  directly. A QIDI Box under Happy Hare reports `filament_heater: heater_generic unit0_heater`
+  and `environment_sensor: temperature_sensor unit0_Env`. SPEC section 2.5
+  (`lane_status.environment`) maps onto this one to one.
 
 **D. Moonraker component `components/mmu_server.py`.**
 - **(1) Remote methods.** No HTTP endpoints; all are remote methods called from Klipper, listed
