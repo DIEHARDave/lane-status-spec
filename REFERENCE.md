@@ -104,6 +104,13 @@ a brand. The AFC project is ArmoredTurtle's AFC-Klipper-Add-On. A producer MUST 
 project's product names (AFC, Box Turtle, …) in its own module name, config section,
 documentation title or UI strings beyond these object and command names.
 
+Existing producers already break this rule: zmod_afclite and KILN_AFCLite carry "afc" in their
+module and config names, and paxx calls its U1 module AFC-Lite. They MAY keep those names for a
+transition, because renaming a module breaks every user's `printer.cfg`. The path off them, as
+SPEC.md §2.3 sets it out: publish under a name without "AFC", keep accepting the old config
+section as a deprecated alias for at least one release, and say in the docs that the module is
+not AFC. A new producer gets no such allowance.
+
 ### 5.1 Panel trigger
 
 - The panel appears in both UIs exactly when an object named `AFC` exists

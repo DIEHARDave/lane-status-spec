@@ -89,6 +89,13 @@ producer that wants those panels MAY publish `AFC`, one `AFC_unit <unit>` per un
 `AFC_lane <lane>` per lane. These names are a wire format the UIs require, not a brand; the
 producer's own name, config and docs MUST NOT present it as AFC.
 
+Outside those object and command names, a producer that is not AFC MUST NOT use "AFC" in its
+module name, config section, package name or UI strings. Producers whose names already contain
+it, such as zmod_afclite and KILN_AFCLite, MAY keep them for a transition so that existing user
+configs keep working. Such a producer SHOULD move to a name without "AFC": publish under the new
+name, accept the old config section as a deprecated alias for at least one release, and say
+plainly in its docs that it is not AFC.
+
 A status-only producer of this profile:
 
 - MUST NOT publish `AFC` when one already exists;
