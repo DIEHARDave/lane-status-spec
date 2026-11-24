@@ -994,7 +994,10 @@ Native firmware, which writes no `lane_data` of its own:
 OrcaSlicer's reader takes `lane` as a 0-based tray index, lays four trays per unit by
 `lane / 4` and `lane % 4`, never reads the key, and shows the tray as "A1"…, so `lane` `"0"`
 appears as A1 (`MoonrakerPrinterAgent.cpp#fetch_moonraker_filament_data`, `#build_ams_payload`;
-`GUI/Plater.cpp#get_ams_name`; `docs/HLSD/filament_id.md`, `v2.5.2`).
+`GUI/Plater.cpp#get_ams_name`; `docs/HLSD/filament_id.md`, `v2.5.2`). Two records with the same
+`lane` do not show as two trays: `build_ams_payload` binds each tray to the first record with
+that `lane`, in the namespace's alphabetical key order, so `T0` hides `lane1`. A stale record
+under the key that sorts first therefore hides the live one.
 
 Note on Z-Mod: its docs give `lane0`… keys while its own AFC lanes are named `lane1`…, and the
 `zmod_afc.py` read reports `lane_data_enabled: False` with no database writes. The module that
