@@ -112,7 +112,9 @@ documentation title or UI strings beyond these object and command names.
   one `AFC_lane <lane>` per lane.
 - A producer MUST NOT publish `AFC` if another object by that name exists. It MUST check at
   `klippy:connect` and stand down without error. zmod_afclite and KILN_AFCLite instead raise a
-  config error, checked at config load. Standing down is the proposal.
+  config error. KILN_AFCLite checks `AFC`, its `AFC_unit` and its `AFC_lane` names at config
+  load. zmod_afclite checks `AFC` at config load and its `AFC_unit` and `AFC_lane` names at
+  `klippy:connect`, when it registers them. Standing down is the proposal.
 
 ### 5.2 `AFC`
 
@@ -370,7 +372,7 @@ Abbreviations used below:
 | `lane_status` object (SPEC.md §2.1; §7 D1) | **Proposal** | |
 | §4.1 state vocabulary | **Source**: AFC `extras/AFC.py` `class State`; Mainsail `locales/en.json` `Panels.AfcPanel.*`, `AfcPanelExtruder.vue#state`; Fluidd `locales/en.yaml` `app.afc.*`, `AfcCardExtruder.vue#state`, `#toolSelectionDisabled`. Shims' values: paxx `AFC.py#get_status`, zmod_afclite `AFCState`, KILN_AFCLite `extras/kiln_afclite.py` `AFCState`, `ACTIVITY_STATES` | AFC `5ea84ea`; UI; paxx `417e639`; Z `375c86d`; K `67aae0d` |
 | §4.2 lane status | **Source**: Fluidd `typings/klipper.d.ts#AfcLaneStatus`; shims' `get_status` (`AFCLaneState`); H `ams_backend_afc.cpp#parse_afc_stepper`. The recommendation is a **proposal** | UI; paxx, Z, K as above; H |
-| §5.1 panel trigger | **Source**: Mainsail `store/gui/getters.ts`, `mixins/afc.ts#afcExists`; Fluidd `printer/getters.ts#getSupportsAfc`, `views/Dashboard.vue`; zmod_afclite `zmod_afclite.py#AFC.__init__`, KILN_AFCLite `kiln_afclite.py#AFC.__init__` (config errors) | UI; Z; K |
+| §5.1 panel trigger | **Source**: Mainsail `store/gui/getters.ts`, `mixins/afc.ts#afcExists`; Fluidd `printer/getters.ts#getSupportsAfc`, `views/Dashboard.vue`; zmod_afclite `zmod_afclite.py#AFC.__init__` and `#AFC._handle_connect` (`375c86d`), KILN_AFCLite `kiln_afclite.py#AFC.__init__` (`bb9fb05`) (config errors) | UI; Z; K |
 | §5.2-5.4 field tables (keys, who publishes, who reads) | **Source**: AFC `extras/AFC.py`, `AFC_lane.py`, `AFC_unit.py` `get_status`; paxx `31-feature-afc-lite/.../AFC*.py`; zmod_afclite `zmod_afclite.py` `get_status`; KILN_AFCLite `extras/kiln_afclite.py` `get_status`; Mainsail `mixins/afc.ts` + `panels/Afc/*` + `dialogs/Afc*`; Fluidd `mixins/afc.ts` + `widgets/afc/**` + `widgets/status/StatusTab.vue`; H `src/printer/ams_backend_afc.cpp#required_status_objects`, `#parse_afc_state`, `#parse_afc_stepper`, `#parse_afc_unit_object`. "Req" levels are **proposal** | AFC `5ea84ea`; paxx `417e639`; Z `375c86d`; K `67aae0d`; UI; H |
 | Unit lookup rule `AFC_<Type> <unit>` and brand icons | **Source**: Mainsail `AfcPanelUnit.vue#unit`, `#type`; Fluidd `AfcCardUnit.vue#unit`, `#unitType`; AFC `AFC.py` `unitdisplay` and the `self.type` defaults in `AFC_BoxTurtle.py`, `AFC_HTLF.py`, `AFC_NightOwl.py`, `AFC_QuattroBox.py`, `AFC_Toolchanger.py`, `AFC_Claymore.py`, `AFC_EMU.py`, `AFC_vivid.py`, `AFC_OpenAMS.py`; Mainsail `AfcPanelUnit.vue#modulIcon`, Fluidd `AfcCardUnit.vue#unitIcon` (icons) | UI; AFC |
 | `AFC_lane.lane` meaning | **Source**: AFC `extras/AFC_lane.py#AFCLane.__init__` (`self.index = int(unit.split(':')[1])`, else 0), `templates/AFC_Turtle_1.cfg`, `templates/AFC_NightOwl_1.cfg`; paxx `AFC_lane.py` (`lane_index`); zmod_afclite and KILN_AFCLite `AFCLane.get_status` | AFC `5ea84ea`; paxx; Z; K |
@@ -512,6 +514,9 @@ maintainer wanted this surface to be ecosystem-wide, not AFC-branded [I from the
 - **Happy Hare.** Writes `laneN` records (`push_lane_data`), with a numeric `filament_id`.
 - **HelixScreen.** Writes `laneN` or `T<n>` (`docs/specs/filament_slots.md`).
 - **Mainsail.** Writes `T<n>` records for Spoolman tool changers (#2510).
+- **KILN_AFCLite** writes no `lane_data`: it reports `lane_data_enabled: false` and leaves the
+  namespace to Kiln OS's own `kiln_lanes` Moonraker component (`kiln_afclite.py`, `bb9fb05`;
+  README).
 - **zmod_afclite.** Re-checks every 15 s (`LANE_DATA_RECHECK`). It writes only where an entry disagrees with Z-Mod, merging `color`/`material` into existing entries found by their `lane` field (including HelixScreen's `T0..T3`), and drops spool-specific keys when the spool changed. It polls every 2 s until the slots settle.
 - **spoolman-lane-sync** (broncosis, `1660093`). Keys are bare `"0"`, `"1"`, …. It writes `material`, `color`, `vendor`, `name`, `remaining_weight`, `setting_id`, and `filament_id`, copied from the Spoolman filament extra `orca_filament_id`. Its README tells users to put Bambu `GF*` codes there, which miss in the Moonraker path because only `BBLPrinterAgent` translates them. It claims the namespace with a top-level `source: "spoolman"` key (`#_claim_source`).
 
