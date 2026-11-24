@@ -28,9 +28,10 @@ Hare, so firmware modders impersonate AFC: paxx (Snapmaker U1), zmod_afclite and
 ship a module that reverse-engineers the Mainsail and Fluidd panels. They disagree with each
 other and with AFC, and a screen can't tell them from real hardware without guessing.
 
-Slicers get little. OrcaSlicer reads six fields from Moonraker's `lane_data` namespace, and as
-of 2026-10-26 can match an exact filament preset from a `filament_id` there. Its own docs say
-"the schema is not standardized across the Klipper ecosystem." It writes nothing back.
+Slicers get little. OrcaSlicer 2.5.2, the current release, reads six fields from Moonraker's
+`lane_data` namespace, and since 2.5.0 can match an exact filament preset from a `filament_id`
+there. Its own docs say "the schema is not standardized across the Klipper ecosystem." It writes
+nothing back.
 
 This draft writes down the contract those modules never had:
 
@@ -153,7 +154,8 @@ OrcaSlicer's reader.
 | `vendor_name`, `name` | string | SHOULD | Manufacturer and product name (Happy Hare's keys) |
 | `spool_id` | int or null | SHOULD | Spoolman spool |
 
-The first five rows (six fields) are what OrcaSlicer reads today. Optional fields (multi-color,
+The first five rows (six fields) are what OrcaSlicer reads in 2.5.0 through 2.5.2; 2.4.x reads
+the same fields except `filament_id`. Optional fields (multi-color,
 temperature ranges, weights, pressure advance, tags) are in REFERENCE.md Part B §7.
 
 **Writes from a slicer** are G-code through Moonraker, and only commands in `capabilities`:
@@ -225,8 +227,8 @@ Consumers ignore unknown keys. Vendor-specific keys MUST be prefixed `<vendor>_`
 - **Happy Hare:** unaffected. REFERENCE.md Part B §7a maps lanes, presence, filament fields,
   tool maps and commands to its `mmu` fields and names the gaps (lane to extruder, runout
   groups), so a consumer can read most of a Happy Hare printer through this draft's terms.
-- **OrcaSlicer as shipped:** reads the six fields in section 5 today. Everything else is ignored
-  until it opts in.
+- **OrcaSlicer as shipped:** 2.5.2 reads the six fields in section 5 (2.4.x all but
+  `filament_id`). Everything else is ignored until it opts in.
 - **Existing `lane_data` writers:** records without `writer` are treated as legacy and still read.
 
 ## Prior art

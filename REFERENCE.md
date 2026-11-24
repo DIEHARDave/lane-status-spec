@@ -400,13 +400,18 @@ Every path ends in the same place. The agent builds Bambu-shaped tray JSON and h
 each tray's `tray_info_idx` (an Orca `filament_id`) to a filament preset.
 [V `src/slic3r/Utils/MoonrakerPrinterAgent.cpp#build_ams_payload`, `docs/HLSD/filament_id.md`]
 
+This section describes OrcaSlicer 2.5.2 (tag `v2.5.2`, `f92a7c065c`, released 2026-11-21), the
+current release. Where behavior differs by version, the row says so. The 2.5.x releases are cut
+from a release branch that contains `main` `adea4e48a6`, the revision earlier drafts cited, plus
+cherry-picked fixes.
+
 | Printer family | Agent | Transport | What it reads | How a lane becomes a preset / tool |
 |---|---|---|---|---|
 | **Bambu (AMS)** | `BBLPrinterAgent` | MQTT push (`print.push_status`) | Per tray (`DevFilaSystem.cpp` ParseV1_0):<br>• identity: `tray_info_idx` (Bambu `GF*` id), `setting_id`, `tray_uuid`, `tag_uid`, `tray_sub_brands`<br>• material and color: `tray_type`, `tray_color`, `cols` + `ctype` (multi-color)<br>• temps: `nozzle_temp_min/max`, `bed_temp`<br>• spool: `tray_weight`, `tray_diameter`, `remain` (%)<br>• calibration: `k`, `n`, `cali_idx` | `BBLPrinterAgent` translates `GF*` to Orca ids, then the shared matcher runs. The tray position is the AMS slot [V] |
-| **Generic Klipper / Moonraker** | `MoonrakerPrinterAgent` | HTTP GET `/server/database/item?namespace=lane_data`, pulled on demand. Fallback: HTTP GET `/printer/objects/query?mmu` | `lane_data`: `lane` (required, 0-based slot; the record key is ignored), `material` (empty means empty lane), `color`, `bed_temp`, `nozzle_temp`, `filament_id` (**string only**: Happy Hare's numeric Spoolman id is treated as absent).<br>Happy Hare: `num_gates`, `gate_status`, `gate_material`, `gate_color`, `gate_temperature` | `filament_id` goes to the matcher unchanged (PR #14423, merged 2026-10-26). Otherwise `filament_id_by_type(material)`. Trays are laid out as 4-slot "AMS Lite" units by `lane` index. There is no tool or extruder mapping [V] |
-| **Snapmaker U1** | `SnapmakerPrinterAgent` | HTTP GET `/printer/objects/query?print_task_config&filament_detect` | From `print_task_config`: `filament_exist`, `filament_type`, `filament_sub_type`, `filament_color_rgba`, `filament_vendor`.<br>From `filament_detect.info[i]`: `VENDOR`, `BED_TEMP`, `FIRST_LAYER_TEMP`; the temperatures are applied only when `VENDOR` is neither `"NONE"` nor empty | Sub-type is folded into the type (`PLA`+`SILK` becomes `PLA SILK`). The preset is the visible root preset with the same vendor and type that is nearest in RGB to the spool color, else by type [V] |
-| **QIDI Box** | `QidiPrinterAgent` | HTTP GET `/printer/objects/query?save_variables=variables&multi_color_controller=box&box_stepper slot0..15=runout_button`, plus `/server/files/config/officiall_filas_list.cfg` (the material and color dictionary) | `box_count`, `color_slot<i>`, `filament_slot<i>`, `vendor_slot<i>`; presence from `runout_button == 0` | A composed id `QD_<series>_<vendor>_<typeidx>`. No preset carries it, so it falls back to type (filament_id.md table) [V] |
-| **Creality K-series CFS** | `CrealityPrintAgent` | Creality's own WebSocket: `{"method":"get","params":{"boxsInfo":1}}` (`CrealityPrint.cpp#query_boxes_info`). Falls back to the Moonraker agent | `boxsInfo.materialBoxs[].materials[]`: `state`, `vendor`, `type`, `name`, `color` (`#0RRGGBB`) | Filters presets to the spool's base type, then scores: +20 for the brand name in the preset name, +10 for the vendor, −5 per preset-name word the spool didn't claim (`match_filament_preset`). Returns the winner's `filament_id`, else `filament_id_by_type` [V] |
+| **Generic Klipper / Moonraker** | `MoonrakerPrinterAgent` | HTTP GET `/server/database/item?namespace=lane_data`, pulled on demand. Fallback: HTTP GET `/printer/objects/query?mmu`. Since 2.5.0 (#15857), a second fallback: `/printer/objects/query?box`, a Creality CFS published as a Klipper object (Creality Hi). The first source that yields any record wins: a `lane_data` namespace whose records are all empty still wins over `mmu` (`fetch_filament_info`; open PRs #14798 and #13372 would fall through) | `lane_data`: `lane` (required, 0-based slot; the record key is ignored), `material` (empty means empty lane), `color`, `bed_temp`, `nozzle_temp`, `filament_id` (**string only**: Happy Hare's numeric Spoolman id is treated as absent).<br>Happy Hare: `num_gates`, `gate_status`, `gate_material`, `gate_color`, `gate_temperature` | `filament_id` goes to the matcher unchanged (PR #14423, merged 2026-10-26, first released in 2.5.0; 2.4.x ignores the field). Otherwise `filament_id_by_type(material)`, then the OrcaFilamentLibrary generic for the material's family (`map_filament_type_to_generic_id`, the `Generic <family> @System` preset's id). Since 2.5.1 (#17089), a material no visible preset carries gets that generic instead of an arbitrary visible preset, and the family table also folds `PLA+`, `PLA PRO`, `ABS+` and `PETG+` into their base and knows `PLA Matte`, `PETG HF`, `PETG-CF`, `PE-CF`, `PP-CF` and `PP-GF`. Trays are laid out as 4-slot "AMS Lite" units by `lane` index. There is no tool or extruder mapping [V] |
+| **Snapmaker U1** | `SnapmakerPrinterAgent` | HTTP GET `/printer/objects/query?print_task_config&filament_detect` | From `print_task_config`: `filament_exist`, `filament_type`, `filament_sub_type`, `filament_color_rgba`, `filament_vendor`.<br>From `filament_detect.info[i]`: `VENDOR`, `BED_TEMP`, `FIRST_LAYER_TEMP`; the temperatures are applied only when `VENDOR` is neither `"NONE"` nor empty. `main` (#16300, merged 2026-11-24, after 2.5.2) drops that gate and reads `HOTEND_MAX_TEMP` instead of `FIRST_LAYER_TEMP`; open PR #16985 would also read `lane_data`'s `filament_id` and `vendor_name` for the U1 | Sub-type is folded into the type (`PLA`+`SILK` becomes `PLA SILK`). The preset is the visible root preset with the same vendor and type that is nearest in RGB to the spool color, else by type [V] |
+| **QIDI Box** | `QidiPrinterAgent` | HTTP GET `/printer/objects/query?save_variables=variables&multi_color_controller=box&box_stepper slot0..15=runout_button`, plus `/server/files/config/officiall_filas_list.cfg` (the material and color dictionary) | `box_count`, `color_slot<i>`, `filament_slot<i>`, `vendor_slot<i>`; presence from `runout_button == 0` | A composed id `QD_<series>_<vendor>_<typeidx>`. No preset carries it, so it falls back to type (filament_id.md table). Units show as "Qidi Box 1", "Qidi Box 2", … (`ams_unit_name`). Since 2.5.0 the print dialog's slot choice is written back (§4) [V] |
+| **Creality K-series CFS** | `CrealityPrintAgent` | Creality's own WebSocket: `{"method":"get","params":{"boxsInfo":1}}` (`CrealityPrint.cpp#query_boxes_info`). Falls back to the Moonraker agent, which since 2.5.0 reads a CFS from the Klipper `box` object (`CrealityCfs.cpp#parse_creality_cfs_response`) | `boxsInfo.materialBoxs[].materials[]`: `state`, `vendor`, `type`, `name`, `color` (`#0RRGGBB`) | Filters presets to the spool's base type, then scores: +20 for the brand name in the preset name, +10 for the vendor, −5 per preset-name word the spool didn't claim (`match_filament_preset`). Returns the winner's `filament_id`, else `filament_id_by_type` [V] |
 | **Anycubic ACE, Prusa MMU, OpenPrintTag, OpenSpool** | none | — | — | Nothing on `main` reads them: no hits for `openprinttag`/`openspool`, and no ACE agent [V by grep; nothing in issue search] |
 
 **A generic schema already exists in Orca, unused [V].** `DevFilaSystemParser::ParseAgentFilament`
@@ -419,11 +424,11 @@ agent-neutral filament document:
   `colors[]`, `nozzle_temp_min/max`, `remain_percent`, `k`, `diameter_mm`, `weight_g`.
 - **External spools:** `external[]`.
 
-On `main` it is declared and defined but **nothing calls it**. It is the shape Orca's own
+In 2.5.2 it is still declared and defined but **nothing calls it**. It is the shape Orca's own
 developers chose for non-Bambu agents, and Part II's lane record is designed to map onto it
 one-to-one.
 
-**Open upstream work [V PR bodies; not merged]:**
+**Open upstream work [V PR bodies and states, checked 2026-11-24; not merged unless noted]:**
 - #16508 generalises N extruders and AMS units for Moonraker. Its body says "Parse AFC lane/tray
   data and Happy Hare toolhead mappings" and "Group synced device filaments by their associated
   extruder". The diff (not the body) maps AFC's `extruder`, `extruder1`, … names to indexes, reads
@@ -433,8 +438,17 @@ one-to-one.
 - #12724 prefers custom presets when syncing.
 - #16802 syncs when a printer connects.
 - #16808 syncs only loaded slots.
-- #15136 and #15857 read CFS over Moonraker.
+- #15857 reads a CFS over Moonraker. **Merged** 2026-10-28 and shipped in 2.5.0. #15136, an
+  earlier attempt, was closed unmerged.
 - #16208 duplicates the already-merged #14423.
+- #14798 and #13372 fall through to Happy Hare's `mmu` object when every `lane_data` record is
+  empty, as Happy Hare writes them for gates with no spool bound.
+- #16985 shares the `lane_data` reader with the Snapmaker agent: the U1 would take a lane's
+  string `filament_id`, and `vendor_name` when the printer reports no vendor.
+- #17465, built on #16508, feeds a record keyed `T<n>` to toolhead n and, on a multi-toolhead
+  printer without AFC or Happy Hare, skips records that name no toolhead.
+- #17114 lets a Python plugin set a slot's color; its author's plugin reads `lane_data` and
+  Spoolman to pick the user's own presets.
 
 **The J0eB0l fork (a fork of Snapmaker/OrcaSlicer; PR #1 is open against J0eB0l's own `main`) [V doc/AFC.md, AFCProtocol.cpp, AFCManager.cpp]:**
 - **Reads:**
@@ -779,8 +793,11 @@ bodies]:
 
 So one id is shared by every variant of a product by design, and writing the id of a user's
 tuned preset selects the first compatible system preset carrying that id, not the user's
-preset. A producer that needs one particular preset
-names it in `slicer_preset` (§7). A user-made root filament carries its own `P*` id
+preset. Since 2.5.0 (#16986), a sync then keeps the slot's current preset instead when that
+preset is a compatible user preset with the same id, so a tuned preset the user already chose
+survives a re-sync; the sync still never picks one on its own
+(`PresetBundle.cpp#PresetBundle::sync_ams_list`, `synced_preset_name`, `v2.5.2`). A producer
+that needs one particular preset names it in `slicer_preset` (§7). A user-made root filament carries its own `P*` id
 (`filament_id.md`).
 
 ## 4. The write direction
@@ -789,6 +806,7 @@ names it in `slicer_preset` (§7). A user-made root filament carries its own `P*
 |---|---|---|
 | Bambu | `ams_mapping` in the print command; `ams_filament_setting` (tray id, setting id, color(s), temps, type) from the tray editor; `extrusion_cali_sel` (K) | MQTT [V `DeviceManager.cpp`, `DevMappingNozzle.cpp`] |
 | Creality CFS | `colorMatch {path, list:[{id,type,color,boxId,materialId}]}` and then `multiColorPrint` at print start | Creality WS [V `CrealityPrint.cpp#start_print_commands`] |
+| Qidi Box (2.5.0+, #16723) | The print dialog's slot per filament, as `SAVE_VARIABLE VARIABLE=value_t<n> VALUE="'slot<m>'"` lines before the print starts | Moonraker `printer.gcode.script` [V `QidiPrinterAgent.cpp#build_tool_slot_script`, `#print_uploaded_file`] |
 | Moonraker agent (upstream) | **Nothing.** `handle_request` handles pause/resume/stop, `home`, temperatures, `gcode_line`, `get_version` and `get_access_code`, but not `ams_filament_setting`. The print starts with `SDCARD_PRINT_FILE` and no mapping [V] | — |
 | J0eB0l fork; Mainsail/Fluidd print dialogs | `SET_MAP LANE=<lane> MAP=T<n>` per tool before the print; lane edits as AFC G-code | Moonraker `printer.gcode.script` [V] |
 | Python agent plugins | `PrintParams.ams_mapping`/`ams_mapping2`/`nozzle_mapping` are exposed to plugins (`PrinterAgentPluginCapability.cpp`), so a plugin agent could send a mapping however it likes [V] |
@@ -860,7 +878,7 @@ absent from `lane_status`. Records with no `writer` are legacy: a producer MAY r
 
 Column key:
 - **Req**: required level for a producer of this profile.
-- **Orca today**: whether `MoonrakerPrinterAgent` on `main` reads the field.
+- **Orca today**: whether `MoonrakerPrinterAgent` in OrcaSlicer 2.5.2 reads the field.
 - **Writers today**: A = AFC `main`, HH = Happy Hare, H = HelixScreen, Z = zmod_afclite,
   S = spoolman-lane-sync.
 
@@ -1060,13 +1078,13 @@ Smallest first. Items 1 and 2 also work for every existing `lane_data` writer.
 
 | Part | Sourced (revision) or proposal |
 |---|---|
-| §1 table: transports, URLs, fields, matching | **Sourced**: Orca `main` `adea4e48a6`: `MoonrakerPrinterAgent.cpp` (`fetch_filament_info`, `fetch_moonraker_filament_data`, `fetch_hh_filament_info`, `build_ams_payload`), `SnapmakerPrinterAgent.cpp` (incl. the `VENDOR` gate on `filament_detect` temps), `QidiPrinterAgent.cpp#fetch_slot_info`, `CrealityPrintAgent.cpp`, `CrealityPrint.cpp#query_boxes_info`, `DevFilaSystem.cpp`, `docs/HLSD/filament_id.md` |
+| §1 table: transports, URLs, fields, matching | **Sourced**: Orca `v2.5.2` `f92a7c065c` (re-read 2026-11-24 against `adea4e48a6`; changes by version from the commits of #14423, #15857, #16723, #16986, #17089 and the 2.5.0-beta to 2.5.2 release notes; PR states via gh): `MoonrakerPrinterAgent.cpp` (`fetch_filament_info`, `fetch_moonraker_filament_data`, `fetch_hh_filament_info`, `build_ams_payload`), `SnapmakerPrinterAgent.cpp` (incl. the `VENDOR` gate on `filament_detect` temps), `QidiPrinterAgent.cpp#fetch_slot_info`, `CrealityPrintAgent.cpp`, `CrealityPrint.cpp#query_boxes_info`, `DevFilaSystem.cpp`, `docs/HLSD/filament_id.md` |
 | `ParseAgentFilament` schema; no caller | **Sourced**: `DevFilaSystem.cpp`, `git grep` on `main`; introduced in `ecddf3d18f` |
 | Upstream PR descriptions | **Sourced** from PR bodies (gh), not from their diffs, except #16508's Moonraker hunk (skimmed) |
 | J0eB0l fork behaviour | **Sourced**: PR #1 body, `doc/AFC.md`, grep of `AFCProtocol.cpp`/`AFCManager.cpp` at `6d89dcf` |
 | §2 lane_data history | **Sourced**: Moonraker PR #1022 body and comments; AFC `AFC_utils.py#send_lane_data`, `AFC_lane.py#send_lane_data`, `#clear_lane_data` at `5ea84ea` and `DEV` `993fb45`; Orca `docs/HLSD/filament_id.md` § "Moonraker `lane_data`" (`20388f846d`) |
 | §3 mint algorithm | **Sourced**: filament_id.md "Minting" |
-| §3 one id per product; inheritance | **Sourced** at Orca `adea4e48a6`: `docs/HLSD/filament_id.md` (opening, "The design", "Who consumes the id"); `src/libslic3r/PresetBundle.cpp#PresetBundle::resolve_vendor_preset`, `#warn_ambiguous_filament_id_match`, `#check_duplicate_filament_subtypes`, the matcher's `get_preset_base(f) == &f` filter; `src/libslic3r/Preset.cpp#PresetCollection::resolve_user_preset`, `#PresetCollection::get_preset_base`; example profiles `OrcaFilamentLibrary/filament/Generic ABS @System.json`, `Sovol/filament/Generic ABS @Sovol SV08.json`, `Generic ABS @Sovol SV08 MAX.json`. The MUST NOT is **proposal** |
+| §3 one id per product; inheritance | **Sourced** at Orca `adea4e48a6`, unchanged in `v2.5.2` except the user-preset keep from #16986 (`sync_ams_list`, `synced_preset_name`): `docs/HLSD/filament_id.md` (opening, "The design", "Who consumes the id"); `src/libslic3r/PresetBundle.cpp#PresetBundle::resolve_vendor_preset`, `#warn_ambiguous_filament_id_match`, `#check_duplicate_filament_subtypes`, the matcher's `get_preset_base(f) == &f` filter; `src/libslic3r/Preset.cpp#PresetCollection::resolve_user_preset`, `#PresetCollection::get_preset_base`; example profiles `OrcaFilamentLibrary/filament/Generic ABS @System.json`, `Sovol/filament/Generic ABS @Sovol SV08.json`, `Generic ABS @Sovol SV08 MAX.json`. The MUST NOT is **proposal** |
 | §3 `flow_k` | **Resolved** by the fact-check: J0eB0l's AFC fork only (`BridgeBox` `26c8b8d`, `extras/AFC_autocal.py`); absent from AFC `main` `5ea84ea` and `DEV` `993fb45` |
 | §4 write paths | **Sourced**: `DeviceManager.cpp` (`ams_filament_setting`, `extrusion_cali_sel`), `DevMappingNozzle.cpp`, `CrealityPrint.cpp#start_print_commands`, `MoonrakerPrinterAgent.cpp#handle_request`, `PrinterAgentPluginCapability.cpp`. The G-code header alternative is a **proposal** |
 | §5 transport analysis | Facts **sourced** as tagged; conclusions **inference** |
