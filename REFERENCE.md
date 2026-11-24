@@ -622,6 +622,22 @@ array has `num_gates` entries and a config default `default_<attr>`.
     `nfc_reader(s)`, `td1_device(s)`
 - Each unit is configured with an `extruder_name` (`mmu_unit.py`), but **it isn't in the
   status**, so a consumer can't tell which extruder a unit feeds.
+- **NFC readers** (`extras/mmu/unit/mmu_nfc_manager.py`, Happy Hare 4.0.0 on). Two topologies,
+  which may coexist on one unit:
+  - a **shared** reader (`nfc_reader`) the user holds tags up to. It is polled; a read is
+    resolved through Spoolman and becomes `mmu.pending_spool_id` until assigned to a gate;
+  - **per-gate** readers (`nfc_readers`, indexed by local gate), read on demand, for example
+    during a gate load. One reader may serve several gates: a QIDI Box lists
+    `["unit0_nfc01", "unit0_nfc01", "unit0_nfc23", "unit0_nfc23"]`, one RC522 per pair.
+  - Live status: `mmu.nfc`, one entry per unit, `{unit, polling, shared, gates}`, where
+    `shared` and each `gates[<global gate>]` are `{enabled, active, alive, present, uid}`
+    (`uid` is the cached last read, not a live scan). Each reader is also a Klipper object
+    `mmu_nfc_reader <name>`: `{alive, interface, last_uid, present, reader_type}`, with
+    `reader_type` one of `rc522`, `pn532`, `pn7160`.
+  - A tag resolves to a spool through Spoolman's `rfid_tag` extra (D below), and the gate keeps
+    one UID in `gate_spool_rfid`. Nothing tag-related reaches `lane_data`.
+  - SPEC section 2.4 (`lane_status.tags`) maps onto this: `readers` from the reader objects and
+    `nfc_readers`, `lanes` from `gates`, `pending` from `pending_spool_id` and `shared.uid`.
 
 **D. Moonraker component `components/mmu_server.py`.**
 - **(1) Remote methods.** No HTTP endpoints; all are remote methods called from Klipper, listed
@@ -657,7 +673,13 @@ array has `num_gates` entries and a config default `default_<attr>`.
     `material`, `bed_temp` (Spoolman only), `nozzle_temp` (`gate_temperature`, default 200),
     `scan_time` (always None), `lane` (str(gate)), `spool_id`, `filament_id` (Spoolman's numeric
     id).
-  - Empty gates (status −1 or 0) get the same keys, all None except `lane`.
+  - Empty gates (status −1 or 0) get the same keys, all None except `lane`. Unknown (−1) is
+    blanked too (`is_empty = gate_status_val in [-1, 0]`), although the gate map keeps an
+    unknown gate's spool and filament: only EMPTY clears them (`clear_gate_attributes`, A
+    above). A gate not yet checked since power-on therefore reads as empty to a slicer. A
+    field report (QIDI Box, Happy Hare 4.2.0) shows it: gate 1 held Spoolman spool 1, a TPU
+    with 892 g left, at status −1, and its record was all None. SPEC section 5's identity rule
+    is what this departs from.
   - `cleanup_lane_data` reads the whole namespace and deletes records whose `lane` ≥
     `num_gates`. It looks only at the `lane` field, so it also deletes **other writers'**
     records in that range.
@@ -1039,7 +1061,7 @@ Happy Hare publishes per-gate **arrays**. The `afc` profile publishes one object
 | Lane list | `lane_status.lanes`, `AFC.lanes` | `range(num_gates)` | Happy Hare has no lane names. Use `str(g)`, or a producer-chosen name with `lane = g` |
 | Units | `AFC.units` / `AFC_unit <u>.lanes` | `mmu_machine.num_units`; `mmu_machine.unit_<i>.{name, display_name, first_gate, num_gates}` | Unit `i` covers gates `first_gate … first_gate+num_gates-1` |
 | Lane → extruder | `AFC_lane.extruder`, record `extruder_index` | Not published (unit config `extruder_name` only) | Gap on the Happy Hare side |
-| Presence | `AFC_lane.load` / `prep`, record `loaded` | `gate_status[g]` ∈ {1,2} (0 empty, −1 unknown) | `prep && load` ≈ `gate_status ≥ 1`. −1 has no AFC equivalent: report `load=false` |
+| Presence | `AFC_lane.load` / `prep`, record `loaded` | `gate_status[g]` ∈ {1,2} (0 empty, −1 unknown) | `prep && load` ≈ `gate_status ≥ 1`. −1 has no AFC equivalent: report `load=false`, and record `loaded: null` with the gate's identity kept (SPEC section 5) |
 | Material | `AFC_lane.material` | `gate_material[g]` | |
 | Vendor | record `vendor_name` | `gate_vendor[g]` | |
 | Name | `AFC_lane.filament_name`, record `name` | `gate_filament_name[g]` | |
@@ -1047,6 +1069,7 @@ Happy Hare publishes per-gate **arrays**. The `afc` profile publishes one object
 | Nozzle temp | `AFC_lane.extruder_temp`, record `nozzle_temp` | `gate_temperature[g]` | |
 | Spool | `AFC_lane.spool_id` | `gate_spool_id[g]` (−1 none) | −1 ↔ null |
 | Tag UID | record `tag.uid` | `gate_spool_rfid[g]`: **one** normalized UID per gate (`normalize_gate_rfid`; commas rejected). The multi-UID list lives in the Spoolman extra `rfid_tag` | |
+| Tag reader (live) | `lane_status.tags` (SPEC section 2.4) | `mmu.nfc[u].gates[g].{present, uid}`, `mmu.nfc[u].shared`, `mmu.pending_spool_id`; objects `mmu_nfc_reader <name>` | Gates sharing a reader report the same reading |
 | TD | record `td` | `gate_td[g]` | |
 | Active lane | `AFC.current_load`, `lane_status.current_lane` | `gate` (when `filament` is "Loaded") | |
 | Active tool | (none; `AFC_lane.map` of the active lane) | `tool` | |

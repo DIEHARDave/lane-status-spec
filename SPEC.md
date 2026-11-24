@@ -116,6 +116,22 @@ about modules that are not theirs.
 
 Field tables: REFERENCE.md, Part A §5.
 
+#### 2.4 Tag readers
+
+A producer with NFC or RFID readers MAY add `tags` to `lane_status`, every key present from the
+first status (section 2.2):
+
+| Key | Type | Meaning |
+|---|---|---|
+| `tags.readers` | object | Reader name to `{type, alive, lanes}`: `type` is the chip (`rc522`, `pn532`, `pn7160`, ...), `alive` whether it answers, `lanes` the lanes it serves. One reader MAY serve several lanes; a shared reader the user holds tags up to serves none |
+| `tags.lanes` | object | Lane to `{present, uid}`: whether a tag is on that lane's reader now, and the UID last read there (`null` if none) |
+| `tags.pending` | object or null | A tag read on a shared reader and not yet assigned to a lane: `{uid, spool}`, with `spool` as in section 6, or `null` |
+
+This is live state only. Once a tag is tied to a lane, its identity goes in the record's `tag`
+(section 6). Where two lanes share one reader, both report what that reader sees, so a consumer
+cannot tell which of the two lanes a tag is on. Happy Hare 4's per-gate and shared readers are
+the model (REFERENCE.md Part B §7a).
+
 ### 3. Commands
 
 A producer lists each command it implements in `capabilities`. The commands, with their AFC and
@@ -164,6 +180,11 @@ OrcaSlicer's reader.
   (a `lane_status` object, or records whose `writer` names another producer).
 - **One record per lane**, kept in step with the loaded spool. An empty lane keeps its keys, with
   `null` values.
+- **Identity follows the spool, not presence.** A lane with a spool assigned keeps its identity
+  fields (`material`, `color`, `name`, `vendor_name`, temperatures, `spool_id`) whatever `loaded`
+  says. A writer MUST NOT blank them because it cannot tell whether filament is present: a gate
+  not yet checked since power-on still holds the spool the user put there. Only a lane with no
+  spool assigned has `null` identity.
 - **Ignore the key.** Writers disagree (`lane0`, `lane1`, `T0`, `"0"`); consumers MUST read
   `lane`.
 
@@ -176,7 +197,7 @@ OrcaSlicer's reader.
 | `filament_id` | string | SHOULD | OrcaSlicer's filament id, its preset match key. It names a filament product, not a preset: every per-printer variant of a product, and every user preset derived from one, inherits the product's id. Copy the exact id from Orca's filament library when the spool is in it; otherwise MAY mint one. A producer MUST NOT write an id that more than one product carries, and MUST NOT use it to select a particular preset (that is `slicer_preset`). A lane linked to a Spoolman spool takes it from the filament's `orca_filament_id` extra (section 6). A producer MUST NOT write a Bambu `GF*` code here: OrcaSlicer translates those only for Bambu printers, so on this path they never match. It MAY translate one first through Orca's `resources/printers/bambu_filament_ids.json`. REFERENCE.md Part B §3 and §7. A numeric value means a Spoolman id (Happy Hare's usage) |
 | `lss_version`, `writer` | string | MUST | `"0.1"`; producer name |
 | `lane_name` | string | MUST | Joins the record to `lane_status` |
-| `loaded` | bool | MUST | Explicit presence |
+| `loaded` | bool or null | MUST | Explicit presence; `null` when the producer cannot tell, such as a gate not yet checked since power-on |
 | `extruder_index` | int | SHOULD | 0-based extruder the lane feeds |
 | `vendor_name`, `name` | string | SHOULD | Manufacturer and product name (Happy Hare's keys) |
 | `spool_id` | int or null | SHOULD | Spoolman spool |
