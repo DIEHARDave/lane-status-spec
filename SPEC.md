@@ -90,7 +90,7 @@ producer that wants those panels MAY publish `AFC`, one `AFC_unit <unit>` per un
 `AFC_lane <lane>` per lane. These names are a wire format the UIs require, not a brand; the
 producer's own name, config and docs MUST NOT present it as AFC.
 
-Outside those object and command names, a producer that is not AFC MUST NOT use "AFC" in its
+Outside those object and command names, a component that is not AFC, producer or not, MUST NOT use "AFC" in its
 module name, config section, package name or UI strings. Producers whose names already contain
 it, such as zmod_afclite and KILN_AFCLite, MAY keep them for a transition so that existing user
 configs keep working. Such a producer SHOULD move to a name without "AFC": publish under the new
@@ -131,6 +131,10 @@ This is live state only. Once a tag is tied to a lane, its identity goes in the 
 (section 6). Where two lanes share one reader, both report what that reader sees, so a consumer
 cannot tell which of the two lanes a tag is on. Happy Hare 4's per-gate and shared readers are
 the model (REFERENCE.md Part B §7a).
+
+A tag reader that is not the producer MAY publish the same `tags` object in a Klipper object of
+its own named `lane_tags <name>`, with lanes named as the producer names them. Consumers find it
+by that prefix and read it like the producer's.
 
 #### 2.5 Filament box environment
 
