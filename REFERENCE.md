@@ -14,8 +14,8 @@ holds everything an implementer or reviewer needs behind it.
 Section numbers are local to each part. Tags: **[V]** read in source (revision named),
 **[I]** inference.
 
-Status columns use: AFC = AFC-Klipper-Add-On, P = paxx U1 stub, Z = zmod_afclite,
-K = KILN_AFCLite, HH = Happy Hare, H = HelixScreen; readers M = Mainsail, F = Fluidd,
+Status columns use: AFC = AFC-Klipper-Add-On, P = paxx U1 stub, Z = Z-Mod's built-in
+emulation (`zmod_afc`), HH = Happy Hare, H = HelixScreen; readers M = Mainsail, F = Fluidd,
 H = HelixScreen.
 
 ---
@@ -42,8 +42,9 @@ call on, using `null` (or the type's empty value) when there's no value.
 **R3.** A producer SHOULD register its objects at config load or `klippy:connect`, before
 `klippy:ready`.
 - Moonraker clients read `objects/list` once, at connect.
-- An object added later appears only after a client reconnects. zmod_afclite's README
-  documents exactly this for lanes added late.
+- An object added later appears only after a client reconnects. Z-Mod's `zmod_afc` registers
+  at `klippy:ready`, and with an IFS Jacker (8-16 channels) it learns the lane count about 30 s
+  after start. So it registers the lane count saved last time (`afc_lanes`) straight away.
 
 **R4.** Colors are strings `#RRGGBB` (uppercase or lowercase hex). Consumers SHOULD accept
 `RRGGBB` without `#` and an 8-digit `RRGGBBAA`, ignoring alpha.
@@ -71,9 +72,9 @@ A producer MUST NOT invent other values in the compatibility profile. Today's sh
 follow this [V]:
 - paxx always sends `idle`. Its `AFCState` also defines `loading`, `unloading`, `tool_change`
   and `error`, but `get_status` never sends them.
-- zmod_afclite and KILN_AFCLite send `idle`, `loading`, `unloading` and `error`.
+- Z-Mod's `zmod_afc` sends AFC's own `Idle`, `Loading`, `Unloading` and `Error`.
 - No shim sends `tool_change`.
-- All of these values miss both UIs' translations.
+- paxx's lowercase values miss both UIs' translations.
 
 Mainsail and Fluidd show the state only inside an `AFC_extruder` block, which these producers
 don't publish [V].
@@ -89,7 +90,7 @@ Status-only producers SHOULD use:
 - `None` for empty.
 
 What shims send today [V]:
-- zmod_afclite and KILN_AFCLite send `empty`/`loaded`.
+- Z-Mod's `zmod_afc` sends AFC's `None`, `Loaded` and `Tooled`.
 - paxx always sends `empty`, even for a loaded lane.
 
 Mainsail and Fluidd never read this key. HelixScreen reads it to work out slot state [V].
@@ -106,8 +107,8 @@ a brand. The AFC project is ArmoredTurtle's AFC-Klipper-Add-On. A producer MUST 
 project's product names (AFC, Box Turtle, …) in its own module name, config section,
 documentation title or UI strings beyond these object and command names.
 
-Existing producers already break this rule: zmod_afclite and KILN_AFCLite carry "afc" in their
-module and config names, and paxx calls its U1 module AFC-Lite. They MAY keep those names for a
+Existing producers already break this rule: Z-Mod's built-in emulation is named `zmod_afc`
+(module and config section), and paxx calls its U1 module AFC-Lite. They MAY keep those names for a
 transition, because renaming a module breaks every user's `printer.cfg`. The path off them, as
 SPEC.md §2.3 sets it out: publish under a name without "AFC", keep accepting the old config
 section as a deprecated alias for at least one release, and say in the docs that the module is
@@ -120,40 +121,39 @@ not AFC. A new producer gets no such allowance.
 - A producer publishing this profile MUST publish `AFC`, one `AFC_unit <unit>` per unit, and
   one `AFC_lane <lane>` per lane.
 - A producer MUST NOT publish `AFC` if another object by that name exists. It MUST check at
-  `klippy:connect` and stand down without error. zmod_afclite and KILN_AFCLite instead raise a
-  config error. KILN_AFCLite checks `AFC`, its `AFC_unit` and its `AFC_lane` names at config
-  load. zmod_afclite checks `AFC` at config load and its `AFC_unit` and `AFC_lane` names at
-  `klippy:connect`, when it registers them. Standing down is the proposal.
+  `klippy:connect` and stand down without error. Z-Mod's `zmod_afc` doesn't check: it publishes
+  only while Z-Mod's save variable `afc` is 1, and add-ons that install real AFC on Z-Mod switch
+  it off. Standing down is the proposal.
 
 ### 5.2 `AFC`
 
 Column key:
 - **Req**: the minimum for the panel to draw correctly.
 - **Pub**: who publishes the key. `AFC` = real AFC (`extras/AFC.py`), `P` = paxx U1 stub,
-  `Z` = zmod_afclite, `K` = KILN_AFCLite.
+  `Z` = Z-Mod's `zmod_afc` (`z_ad5x` `206c1bd`).
 - **Read by**: `M` = Mainsail, `F` = Fluidd, `H` = HelixScreen.
 
 | Key | Type | Req | Meaning | Pub | Read by |
 |---|---|---|---|---|---|
-| `units` | list[string] | MUST | Each entry is `"<Type> <unit>"`. The UI looks up object `AFC_<Type with '_' removed> <unit>` case-insensitively. Status-only producers MUST use Type `unit`, giving `AFC_unit <unit>`. AFC ships the Types `Box_Turtle`, `HTLF`, `Night_Owl`, `Quattro_Box`, `Toolchanger`, `Claymore`, `EMU`, `ViViD` and `OpenAMS`. The first four get a brand icon in both UIs, which strip `_` and ignore case when picking it. A producer that isn't that product MUST NOT use any spelling of an AFC Type | AFC P Z K | M F H |
-| `lanes` | list[string] | MUST | All lane names | AFC P Z K | M F H |
-| `extruders` | list[string] | MUST | `AFC_extruder` names. Status-only: `[]` (with an extruder listed, the UI draws sensors the producer can't report) | AFC P Z K | M F H |
-| `hubs` | list[string] | MUST | `AFC_hub` names. Status-only: `[]` | AFC P Z K | M F H |
-| `buffers` | list[string] | MUST | `AFC_buffer` names. Status-only: `[]` | AFC P Z K | H |
-| `current_load` | string\|null | MUST | Lane loaded in the toolhead. Read before `current_lane` | AFC P Z K | M F H |
-| `current_lane` | string\|null | MUST | Lane being loaded (AFC); the active lane (shims) | AFC P Z K | M F H |
-| `next_lane` | string\|null | SHOULD | | AFC P Z K | H |
-| `current_state` | string | MUST | §4.1 | AFC P Z K | M F H |
-| `error_state` | bool | MUST | | AFC P Z K | M F H |
-| `message` | object | MUST | `{"message": string, "type": "error"\|"warning"\|"info"\|""}`. paxx sends `""`, which both UIs tolerate; producers MUST send the object | AFC Z K (P: string) | M F H |
-| `current_toolchange` | int | SHOULD | Index of the current toolchange in the print | AFC P Z K | M F H |
-| `number_of_toolchanges` | int | SHOULD | | AFC P Z K | F H |
-| `spoolman` | bool\|string | SHOULD | Spoolman integration available. AFC sends the Spoolman URL or null; HelixScreen reads only a string | AFC P Z K | H |
-| `td1_present` | bool | SHOULD | Status-only: `false` | AFC P Z K | M F |
-| `lane_data_enabled` | bool | MAY | | AFC P Z K | — |
-| `bypass_state` | bool | SHOULD | | AFC P Z K | M F H |
-| `quiet_mode`, `position_saved` | bool | MAY | | AFC P Z K | H |
-| `led_state` | bool | SHOULD | Selects the LED button label | AFC (P Z K send `""`) | M F H |
+| `units` | list[string] | MUST | Each entry is `"<Type> <unit>"`. The UI looks up object `AFC_<Type with '_' removed> <unit>` case-insensitively. Status-only producers MUST use Type `unit`, giving `AFC_unit <unit>`. AFC ships the Types `Box_Turtle`, `HTLF`, `Night_Owl`, `Quattro_Box`, `Toolchanger`, `Claymore`, `EMU`, `ViViD` and `OpenAMS`. The first four get a brand icon in both UIs, which strip `_` and ignore case when picking it. A producer that isn't that product MUST NOT use any spelling of an AFC Type | AFC P Z | M F H |
+| `lanes` | list[string] | MUST | All lane names | AFC P Z | M F H |
+| `extruders` | list[string] | MUST | `AFC_extruder` names. Status-only: `[]` (with an extruder listed, the UI draws sensors the producer can't report) | AFC P Z | M F H |
+| `hubs` | list[string] | MUST | `AFC_hub` names. Status-only: `[]` | AFC P Z | M F H |
+| `buffers` | list[string] | MUST | `AFC_buffer` names. Status-only: `[]` | AFC P Z | H |
+| `current_load` | string\|null | MUST | Lane loaded in the toolhead. Read before `current_lane` | AFC P Z | M F H |
+| `current_lane` | string\|null | MUST | Lane being loaded (AFC); the active lane (shims) | AFC P Z | M F H |
+| `next_lane` | string\|null | SHOULD | | AFC P Z | H |
+| `current_state` | string | MUST | §4.1 | AFC P Z | M F H |
+| `error_state` | bool | MUST | | AFC P Z | M F H |
+| `message` | object | MUST | `{"message": string, "type": "error"\|"warning"\|"info"\|""}`. paxx sends `""`, which both UIs tolerate; producers MUST send the object | AFC Z (P: string) | M F H |
+| `current_toolchange` | int | SHOULD | Index of the current toolchange in the print | AFC P Z | M F H |
+| `number_of_toolchanges` | int | SHOULD | | AFC P Z | F H |
+| `spoolman` | bool\|string | SHOULD | Spoolman integration available. AFC sends the Spoolman URL or null; HelixScreen reads only a string | AFC P Z | H |
+| `td1_present` | bool | SHOULD | Status-only: `false` | AFC P Z | M F |
+| `lane_data_enabled` | bool | MAY | | AFC P Z | — |
+| `bypass_state` | bool | SHOULD | | AFC P Z | M F H |
+| `quiet_mode`, `position_saved` | bool | MAY | | AFC P Z | H |
+| `led_state` | bool | SHOULD | Selects the LED button label | AFC Z (P sends `""`) | M F H |
 | `maps` | list[string] | MAY | Tool commands (T0…) | AFC | H |
 
 ### 5.3 `AFC_lane <lane>`
@@ -163,36 +163,36 @@ Status-only producers MUST use `AFC_lane`.
 
 | Key | Type | Units | Req | Meaning | Pub | Read by |
 |---|---|---|---|---|---|---|
-| `name` | string | | MUST | Equals `<lane>` | AFC P Z K | M F |
-| `unit` | string | | MUST | Unit name (no Type prefix). No consumer reads it today; units come from `AFC_<Type> <unit>.lanes` | AFC P Z K | — |
-| `lane` | int | | MUST | Index within the unit, with AFC's meaning (§8 V2): the number after the colon in the lane's `unit:` option (`unit: Turtle_1:1`), so 1-based in AFC's shipped templates, and 0 when the option gives none. paxx, zmod_afclite and KILN_AFCLite send 0-based indices, so they differ from AFC today. No consumer reads it today | AFC P Z K | — |
-| `extruder` | string\|null | | MUST | The extruder this lane feeds. In AFC this is the lane's `AFC_extruder` name, which the UIs match against `AFC.extruders`; shims send the Klipper extruder (`extruder`, `extruder1`, …) | AFC P Z K | M F H |
+| `name` | string | | MUST | Equals `<lane>` | AFC P Z | M F |
+| `unit` | string | | MUST | Unit name (no Type prefix). No consumer reads it today; units come from `AFC_<Type> <unit>.lanes` | AFC P Z | — |
+| `lane` | int | | MUST | Index within the unit, with AFC's meaning (§8 V2): the number after the colon in the lane's `unit:` option (`unit: Turtle_1:1`), so 1-based in AFC's shipped templates, and 0 when the option gives none. paxx sends 0-based indices, so it differs from AFC today; Z-Mod sends the 1-based slot. No consumer reads it today | AFC P Z | — |
+| `extruder` | string\|null | | MUST | The extruder this lane feeds. In AFC this is the lane's `AFC_extruder` name, which the UIs match against `AFC.extruders`; paxx sends the Klipper extruder (`extruder`, `extruder1`, …); Z-Mod sends `null` | AFC P Z | M F H |
 | `hub` | string\|null | | SHOULD | Status-only: `null` | AFC | H |
 | `buffer` | string\|null | | SHOULD | Status-only: `null` | AFC | M F |
-| `map` | string\|list[string]\|null | | MUST | Slicer tool(s) this lane serves (`"T0"`). `"NONE"` or null = unmapped | AFC P Z K | M F H |
-| `load` | bool | | MUST | Filament at the lane's load sensor | AFC P Z K | M F H |
-| `prep` | bool | | MUST | Filament at the prep sensor. Status-only: same as `load`. The UI calls a lane ready when `load && prep` | AFC P Z K | M F H |
-| `tool_loaded` | bool | | MUST | This lane's filament is in the toolhead | AFC P Z K | M F H |
-| `loaded_to_hub` | bool | | SHOULD | Status-only: `false` | AFC P Z K | H |
-| `material` | string | | MUST | Material type; `""` when unknown (**not** `"NONE"`) | AFC P Z K | M F H |
-| `color` | string | `#RRGGBB` | MUST | §R4. `""` when unknown | AFC P Z K | M F H |
-| `weight` | number | g | MUST | Remaining filament. **MUST be > 0**. Both UIs' filament dialogs start the weight field at this value and keep Save disabled while the field is 0, so with no weight the user has to type one on every edit (§6.3 C2). A producer that doesn't measure weight SHOULD report a configurable default (zmod and Kiln: 1000) | AFC Z K (Z and K only when > 0) | M F H |
+| `map` | string\|list[string]\|null | | MUST | Slicer tool(s) this lane serves (`"T0"`). `"NONE"` or null = unmapped | AFC P Z | M F H |
+| `load` | bool | | MUST | Filament at the lane's load sensor | AFC P Z | M F H |
+| `prep` | bool | | MUST | Filament at the prep sensor. Status-only: same as `load`. The UI calls a lane ready when `load && prep` | AFC P Z | M F H |
+| `tool_loaded` | bool | | MUST | This lane's filament is in the toolhead | AFC P Z | M F H |
+| `loaded_to_hub` | bool | | SHOULD | Status-only: `false` | AFC P Z | H |
+| `material` | string | | MUST | Material type; `""` when unknown (**not** `"NONE"`) | AFC P Z | M F H |
+| `color` | string | `#RRGGBB` | MUST | §R4. `""` when unknown | AFC P Z | M F H |
+| `weight` | number | g | MUST | Remaining filament. **MUST be > 0**. Both UIs' filament dialogs start the weight field at this value and keep Save disabled while the field is 0, so with no weight the user has to type one on every edit (§6.3 C2). A producer that doesn't measure weight SHOULD report a configurable default (zmod and Kiln: 1000) | AFC Z (Z: 1000 g when unset) | M F H |
 | `initial_weight` | number\|null | g | SHOULD | Full spool | AFC | M F H |
-| `spool_id` | int\|null | | MUST | Spoolman spool id, null when none (paxx sends `0`) | AFC P Z K | M F H |
-| `filament_name` | string | | SHOULD | Display name; `""` when unknown. MUST be present from the first call (§R2); paxx, zmod and Kiln omit it conditionally | AFC P Z K | M F H |
-| `extruder_temp` | int\|null | °C | SHOULD | | AFC K (K only when the slot has a temperature) | F H |
+| `spool_id` | int\|null | | MUST | Spoolman spool id, null when none (paxx sends `0`) | AFC P Z | M F H |
+| `filament_name` | string | | SHOULD | Display name; `""` when unknown. MUST be present from the first call (§R2); paxx, zmod and Kiln omit it conditionally | AFC P | M F H |
+| `extruder_temp` | int\|null | °C | SHOULD | | AFC | F H |
 | `bed_temp` | int\|null | °C | MAY | | AFC | F H |
-| `runout_lane` | string\|null | | SHOULD | Backup lane, `"NONE"`, or (paxx) `"AUTO"` for firmware-managed endless spool | AFC P Z K | M F H |
-| `status` | string | | SHOULD | §4.2 | AFC P Z K | H |
-| `filament_status`, `filament_status_led` | string | | MAY | | AFC P Z K | H |
+| `runout_lane` | string\|null | | SHOULD | Backup lane, `"NONE"`, or (paxx) `"AUTO"` for firmware-managed endless spool | AFC P Z | M F H |
+| `status` | string | | SHOULD | §4.2 | AFC P Z | H |
+| `filament_status`, `filament_status_led` | string | | MAY | | AFC P Z | H |
 | `buffer_status`, `dist_hub`, `remember_spool`, `multi_color_hexes`, `td1_td`, `td1_color`, `td1_scan_time`, `selector`, `endstops` | various | | MAY | Real-hardware fields; status-only producers SHOULD omit them entirely (absent from the first call) | AFC | M F (`dist_hub`, `td1_td`, `td1_color`); H (all) |
 
 ### 5.4 `AFC_unit <unit>`
 
 | Key | Type | Req | Meaning | Pub | Read by |
 |---|---|---|---|---|---|
-| `lanes` | list[string] | MUST | This unit's lanes | AFC P Z K | M F H |
-| `extruders`, `hubs`, `buffers` | list[string] | MUST | Status-only: `[]` | AFC P Z K | M F (`hubs`); H (all) |
+| `lanes` | list[string] | MUST | This unit's lanes | AFC P Z | M F H |
+| `extruders`, `hubs`, `buffers` | list[string] | MUST | Status-only: `[]` | AFC P Z | M F (`hubs`); H (all) |
 
 ### 5.5 Objects outside the status-only profile
 
@@ -228,24 +228,24 @@ so a status-only `afc` producer would face §6.3 on every click.
 All commands take `LANE=<lane>` (R5). Each row names the capability token that advertises it in
 `lane_status.capabilities`.
 
-| Command | Capability | Sent by | Expected behaviour | P | Z | K |
-|---|---|---|---|---|---|---|
-| `CHANGE_TOOL LANE=` | `load` | M F (lane Load; extruder settings dialog) H. No UI sends it at print start | Load the lane into the toolhead, unloading another first if needed | `AUTO_FEEDING LOAD=1` | `IN_ZCOLOR`/`_T_IN_ZCOLOR` | `IFS_LOAD` (homes first) |
-| `TOOL_UNLOAD [LANE=]` | `unload` | M F (always with `LANE`) H (without `LANE` when no lane is picked) | Unload from the toolhead; without `LANE`, the loaded lane | `AUTO_FEEDING UNLOAD=1` | `IN_ZCOLOR NAPR=1` / C5 prompt | `IFS_UNLOAD` (homes first) |
-| `LANE_UNLOAD LANE=` | `eject` | M F (Eject) H | Retract the lane's filament out of the unit | `AUTO_FEEDING UNLOAD=1` | as unload | `IFS_EJECT` |
-| `SET_COLOR LANE= COLOR= [COLORS=] [COLOR_MODE=]` | `set_color` | M F H | Set lane color. An empty `COLOR` SHOULD clear the color. `COLORS` is a comma-separated `#RRGGBB` list (2 or more) with `COLOR` equal to its first entry, and `COLOR_MODE` is `gradient` or `coaxial`; a producer that stores one color keeps `COLOR` and ignores both. Sending `COLOR` alone returns the lane to one color. Real AFC then stores a bare `#`, which HelixScreen reads as no color, and HelixScreen's lane Clear sends `SET_COLOR COLOR=` for exactly that. zmod_afclite keeps the color instead | `SET_PRINT_FILAMENT_CONFIG` | `CHANGE_ZCOLOR` | `IFS_SET_MATERIAL` |
-| `SET_MATERIAL LANE= MATERIAL=` | `set_material` | M F H | An empty `MATERIAL` SHOULD clear the material, as in real AFC; HelixScreen's Clear sends `SET_MATERIAL MATERIAL=` | ✓ | ✓ (+ picker) | ✓ (`IFS_SET_MATERIAL`) |
-| `SET_WEIGHT LANE= WEIGHT=` | `set_weight` | M F H | Persist the weight. `WEIGHT=0` returns to the default | **raises** | ✓ | ✓ |
-| `SET_SPOOL_ID LANE= SPOOL_ID=` | `set_spool_id` | M F H | Bind or clear (empty or 0) a Spoolman spool | (SpoolLink) | ✓ (+`CARD_UID`) | ✓ (+`CARD_UID`) |
-| `SET_MAP LANE= MAP=T<n>` | `set_map` | M F (mapping dialog; print-start dialog when the user picks a lane) H | Point slicer tool `T<n>` at the lane | swap | **raises** | ✓ (`IFS_MAP_TOOL`) |
-| `SET_RUNOUT LANE= RUNOUT=` | `set_runout` | M F H | Backup lane | — | — | — |
-| `SET_VENDOR LANE= VENDOR=` | `set_vendor` | none | Not an AFC command: real AFC registers no `SET_VENDOR`, and no UI sends it. Outside the C1 required set | ✓ | **raises** | **raises** |
-| `AFC_CLEAR_MESSAGE` | `clear_message` | M F H | Clear `message` and `error_state` | — | ✓ | ✓ |
-| `AFC_RESET`, `RESET_FAILURE` | `reset` | H | Clear an error after the user fixed it | — | ✓ | ✓ |
-| `AFC_SELECT_TOOL TOOL=` | `select_tool` | F H | | — | — | — |
-| `AFC_SET_SPOOL_TEMP LANE= EXTRUDER_TEMP= [BED_TEMP=]` | `set_temp` | F (only when the command exists) | | — | — | — |
-| `AFC_CALIBRATION`, `TURN_ON_AFC_LED`/`TURN_OFF_AFC_LED`, `AFC_BRUSH`, `AFC_PARK`, `AFC_GET_TD_ONE_DATA`, `SET_HUB_DIST`/`SAVE_HUB_DIST`, `SET_BOWDEN_LENGTH`, `UPDATE_TOOLHEAD_SENSORS`, `SAVE_EXTRUDER_VALUES` | — | M F (buttons, settings) H | Real-hardware only; see the note below the table | — | — | — |
-| `AFC_QUIET_MODE`, `AFC_LANE_RESET`, `AFC_RESET_MAPPING`/`RESET_AFC_MAPPING`, `AFC_RESET_MOTOR_TIME`, `AFC_SET_EXTRUDER_LED`, `AFC_TEST_LANES`, `AFC_TOGGLE_MACRO`, `AFC_TOOLHEAD_CALIBRATION`, `AFC_CHANGE_BLADE`, `SET_LONG_MOVE_SPEED` | — | H | Real-hardware only. A status-only producer MUST NOT define them | — | — | — |
+| Command | Capability | Sent by | Expected behaviour | P | Z |
+|---|---|---|---|---|---|
+| `CHANGE_TOOL LANE=` | `load` | M F (lane Load; extruder settings dialog) H. No UI sends it at print start | Load the lane into the toolhead, unloading another first if needed | `AUTO_FEEDING LOAD=1` | `[zmod_afc] load` template, default `IN_ZCOLOR SLOT={slot} NAPR=0` |
+| `TOOL_UNLOAD [LANE=]` | `unload` | M F (always with `LANE`) H (without `LANE` when no lane is picked) | Unload from the toolhead; without `LANE`, the loaded lane | `AUTO_FEEDING UNLOAD=1` | `unload` template, default `IN_ZCOLOR SLOT={slot} NAPR=1`; without `LANE`, the active slot |
+| `LANE_UNLOAD LANE=` | `eject` | M F (Eject) H | Retract the lane's filament out of the unit | `AUTO_FEEDING UNLOAD=1` | as unload |
+| `SET_COLOR LANE= COLOR= [COLORS=] [COLOR_MODE=]` | `set_color` | M F H | Set lane color. An empty `COLOR` SHOULD clear the color. `COLORS` is a comma-separated `#RRGGBB` list (2 or more) with `COLOR` equal to its first entry, and `COLOR_MODE` is `gradient` or `coaxial`; a producer that stores one color keeps `COLOR` and ignores both. Sending `COLOR` alone returns the lane to one color. Real AFC then stores a bare `#`, which HelixScreen reads as no color, and HelixScreen's lane Clear sends `SET_COLOR COLOR=` for exactly that. zmod_afclite keeps the color instead | `SET_PRINT_FILAMENT_CONFIG` | slot color through `zmod_color` (or the stock screen's `/control`), snapped to the C5 Pro palette; empty keeps the color |
+| `SET_MATERIAL LANE= MATERIAL=` | `set_material` | M F H | An empty `MATERIAL` SHOULD clear the material, as in real AFC; HelixScreen's Clear sends `SET_MATERIAL MATERIAL=` | ✓ | ✓ (+ picker); empty keeps the material |
+| `SET_WEIGHT LANE= WEIGHT=` | `set_weight` | M F H | Persist the weight. `WEIGHT=0` returns to the default | **raises** | ✓ |
+| `SET_SPOOL_ID LANE= SPOOL_ID=` | `set_spool_id` | M F H | Bind or clear (empty or 0) a Spoolman spool | (SpoolLink) | ✓ (+`CARD_UID`) |
+| `SET_MAP LANE= MAP=T<n>` | `set_map` | M F (mapping dialog; print-start dialog when the user picks a lane) H | Point slicer tool `T<n>` at the lane | swap | ✓ (Z-Mod's tool map file) |
+| `SET_RUNOUT LANE= RUNOUT=` | `set_runout` | M F H | Backup lane | — | — |
+| `SET_VENDOR LANE= VENDOR=` | `set_vendor` | none | Not an AFC command: real AFC registers no `SET_VENDOR`, and no UI sends it. Outside the C1 required set | ✓ | — |
+| `AFC_CLEAR_MESSAGE` | `clear_message` | M F H | Clear `message` and `error_state` | — | ✓ |
+| `AFC_RESET`, `RESET_FAILURE` | `reset` | H | Clear an error after the user fixed it | — | ✓ |
+| `AFC_SELECT_TOOL TOOL=` | `select_tool` | F H | | — | — |
+| `AFC_SET_SPOOL_TEMP LANE= EXTRUDER_TEMP= [BED_TEMP=]` | `set_temp` | F (only when the command exists) | | — | — |
+| `AFC_CALIBRATION`, `TURN_ON_AFC_LED`/`TURN_OFF_AFC_LED`, `AFC_BRUSH`, `AFC_PARK`, `AFC_GET_TD_ONE_DATA`, `SET_HUB_DIST`/`SAVE_HUB_DIST`, `SET_BOWDEN_LENGTH`, `UPDATE_TOOLHEAD_SENSORS`, `SAVE_EXTRUDER_VALUES` | — | M F (buttons, settings) H | Real-hardware only; see the note below the table | — | — |
+| `AFC_QUIET_MODE`, `AFC_LANE_RESET`, `AFC_RESET_MAPPING`/`RESET_AFC_MAPPING`, `AFC_RESET_MOTOR_TIME`, `AFC_SET_EXTRUDER_LED`, `AFC_TEST_LANES`, `AFC_TOGGLE_MACRO`, `AFC_TOOLHEAD_CALIBRATION`, `AFC_CHANGE_BLADE`, `SET_LONG_MOVE_SPEED` | — | H | Real-hardware only. A status-only producer MUST NOT define them | — | — |
 
 **Real-hardware buttons in Mainsail and Fluidd [V].** Three groups behave differently:
 - **Hidden unless the command exists.** The calibration, LED, TD-1, brush and park buttons
@@ -318,7 +318,8 @@ from co-presence:
 - `AFC_unit` beside `filament_detect` means paxx on a U1.
 - `zmod_afclite` beside the Creator 5 changer fingerprint means Z-Mod.
 - Every other `AFC` object is treated as real AFC. `AFC` also wins over a native `ifs` object.
-  That includes zmod_afclite and KILN_AFCLite on an AD5X.
+  That includes Z-Mod's `zmod_afc` on an AD5X.
+- These checks predate Z-Mod's built-in `zmod_afc`; zmod_afclite is archived.
 - One exception: the AFC backend still notes `zmod_afclite` on any machine and treats tool
   mapping as per-print firmware state (`ams_backend_afc.cpp#set_discovery`).
 
@@ -348,7 +349,7 @@ retired for a producer once it publishes `lane_status`.
 - Consumers MUST ignore unknown keys and unknown capability tokens.
 
 **V2.** Vendor-specific keys in any object MUST be prefixed `<vendor>_`, for example
-`zmod_slot` (already published by zmod_afclite) or `helix_…`.
+`zmod_slot` or `helix_…`.
 - Unprefixed keys are reserved for this spec and for the field names the `afc` profile inherits
   from AFC.
 - A producer MUST NOT reuse an unprefixed AFC key with a different meaning.
@@ -376,21 +377,21 @@ Abbreviations used below:
 |---|---|---|
 | §2 R1 (objects/list = objects with `get_status`; subscriptions merged) | **Source**: Klipper and Kalico `klippy/webhooks.py#_handle_list`; Moonraker `components/klippy_connection.py#_request_subscripton` | Klipper `ee2c6fb`; Kalico `0057b6a`; Moonraker `b559b9a` |
 | §2 R2 (field list fixed at first query; re-subscription) | **Source**: Klipper and Kalico `klippy/webhooks.py#QueryStatusHelper._do_query` (identical); Moonraker `klippy_connection.py#_request_subscripton`; Mainsail `#initSubscripts` and Fluidd `#onPrinterObjectsList` subscribe with `null`; H `ams_backend_afc.cpp#required_status_objects` names fields | as above; UI; H |
-| §2 R3 (UIs read objects/list once) | **Source**: Mainsail `store/printer/actions.ts#initSubscripts`, Fluidd `store/printer/actions.ts#onPrinterObjectsList`; zmod_afclite README | UI; `375c86d` |
+| §2 R3 (UIs read objects/list once) | **Source**: Mainsail `store/printer/actions.ts#initSubscripts`, Fluidd `store/printer/actions.ts#onPrinterObjectsList`; Z-Mod `.shell/zmod_afc.py#_ready` | UI; Z |
 | §2 R4, R5 | **Proposal** (R4 tolerance mirrors paxx RGBA input and HelixScreen's reader `color_utils.h#parse_hex_color`) | |
 | `lane_status` object (SPEC.md §2.1; §7 D1) | **Proposal** | |
-| §4.1 state vocabulary | **Source**: AFC `extras/AFC.py` `class State`; Mainsail `locales/en.json` `Panels.AfcPanel.*`, `AfcPanelExtruder.vue#state`; Fluidd `locales/en.yaml` `app.afc.*`, `AfcCardExtruder.vue#state`, `#toolSelectionDisabled`. Shims' values: paxx `AFC.py#get_status`, zmod_afclite `AFCState`, KILN_AFCLite `extras/kiln_afclite.py` `AFCState`, `ACTIVITY_STATES` | AFC `5ea84ea`; UI; paxx `417e639`; Z `375c86d`; K `67aae0d` |
-| §4.2 lane status | **Source**: Fluidd `typings/klipper.d.ts#AfcLaneStatus`; shims' `get_status` (`AFCLaneState`); H `ams_backend_afc.cpp#parse_afc_stepper`. The recommendation is a **proposal** | UI; paxx, Z, K as above; H |
-| §5.1 panel trigger | **Source**: Mainsail `store/gui/getters.ts`, `mixins/afc.ts#afcExists`; Fluidd `printer/getters.ts#getSupportsAfc`, `views/Dashboard.vue`; zmod_afclite `zmod_afclite.py#AFC.__init__` and `#AFC._handle_connect` (`375c86d`), KILN_AFCLite `kiln_afclite.py#AFC.__init__` (`bb9fb05`) (config errors) | UI; Z; K |
-| §5.2-5.4 field tables (keys, who publishes, who reads) | **Source**: AFC `extras/AFC.py`, `AFC_lane.py`, `AFC_unit.py` `get_status`; paxx `31-feature-afc-lite/.../AFC*.py`; zmod_afclite `zmod_afclite.py` `get_status`; KILN_AFCLite `extras/kiln_afclite.py` `get_status`; Mainsail `mixins/afc.ts` + `panels/Afc/*` + `dialogs/Afc*`; Fluidd `mixins/afc.ts` + `widgets/afc/**` + `widgets/status/StatusTab.vue`; H `src/printer/ams_backend_afc.cpp#required_status_objects`, `#parse_afc_state`, `#parse_afc_stepper`, `#parse_afc_unit_object`. "Req" levels are **proposal** | AFC `5ea84ea`; paxx `417e639`; Z `375c86d`; K `67aae0d`; UI; H |
+| §4.1 state vocabulary | **Source**: AFC `extras/AFC.py` `class State`; Mainsail `locales/en.json` `Panels.AfcPanel.*`, `AfcPanelExtruder.vue#state`; Fluidd `locales/en.yaml` `app.afc.*`, `AfcCardExtruder.vue#state`, `#toolSelectionDisabled`. Shims' values: paxx `AFC.py#get_status`, Z-Mod `zmod_afc.py#_afc_status` | AFC `5ea84ea`; UI; paxx `417e639`; Z |
+| §4.2 lane status | **Source**: Fluidd `typings/klipper.d.ts#AfcLaneStatus`; shims' `get_status` (`AFCLaneState`); H `ams_backend_afc.cpp#parse_afc_stepper`. The recommendation is a **proposal** | UI; paxx, Z as above; H |
+| §5.1 panel trigger | **Source**: Mainsail `store/gui/getters.ts`, `mixins/afc.ts#afcExists`; Fluidd `printer/getters.ts#getSupportsAfc`, `views/Dashboard.vue`; Z-Mod `zmod_afc.py#_ready` (gated on the `afc` save variable) | UI; Z |
+| §5.2-5.4 field tables (keys, who publishes, who reads) | **Source**: AFC `extras/AFC.py`, `AFC_lane.py`, `AFC_unit.py` `get_status`; paxx `31-feature-afc-lite/.../AFC*.py`; Z-Mod `zmod_afc.py#_afc_status`, `#_lane_status`, `#_resize`; Mainsail `mixins/afc.ts` + `panels/Afc/*` + `dialogs/Afc*`; Fluidd `mixins/afc.ts` + `widgets/afc/**` + `widgets/status/StatusTab.vue`; H `src/printer/ams_backend_afc.cpp#required_status_objects`, `#parse_afc_state`, `#parse_afc_stepper`, `#parse_afc_unit_object`. "Req" levels are **proposal** | AFC `5ea84ea`; paxx `417e639`; Z; UI; H |
 | Unit lookup rule `AFC_<Type> <unit>` and brand icons | **Source**: Mainsail `AfcPanelUnit.vue#unit`, `#type`; Fluidd `AfcCardUnit.vue#unit`, `#unitType`; AFC `AFC.py` `unitdisplay` and the `self.type` defaults in `AFC_BoxTurtle.py`, `AFC_HTLF.py`, `AFC_NightOwl.py`, `AFC_QuattroBox.py`, `AFC_Toolchanger.py`, `AFC_Claymore.py`, `AFC_EMU.py`, `AFC_vivid.py`, `AFC_OpenAMS.py`; Mainsail `AfcPanelUnit.vue#modulIcon`, Fluidd `AfcCardUnit.vue#unitIcon` (icons) | UI; AFC |
-| `AFC_lane.lane` meaning | **Source**: AFC `extras/AFC_lane.py#AFCLane.__init__` (`self.index = int(unit.split(':')[1])`, else 0), `templates/AFC_Turtle_1.cfg`, `templates/AFC_NightOwl_1.cfg`; paxx `AFC_lane.py` (`lane_index`); zmod_afclite and KILN_AFCLite `AFCLane.get_status` | AFC `5ea84ea`; paxx; Z; K |
+| `AFC_lane.lane` meaning | **Source**: AFC `extras/AFC_lane.py#AFCLane.__init__` (`self.index = int(unit.split(':')[1])`, else 0), `templates/AFC_Turtle_1.cfg`, `templates/AFC_NightOwl_1.cfg`; paxx `AFC_lane.py` (`lane_index`); Z-Mod `zmod_afc.py#_lane_status` | AFC `5ea84ea`; paxx; Z |
 | `weight > 0` for the dialog | **Source**: Mainsail and Fluidd `AfcUnitLaneFilamentDialog.vue#disableSetBtn` (`!material \|\| !weight \|\| !color` disables Save; Fluidd also disables it for a weight below 0 and on its temperature checks), `#currentWeight`, and the open watcher (Mainsail `#onShowDialogChange`, Fluidd `#onShowChange`) | UI |
 | §5.6 print-start dialogs | **Source**: Mainsail `StartPrintDialog.vue`, `StartPrintDialogAfc.vue#usedTools`, `StartPrintDialogAfcTool.vue#changeToolMapping`; Fluidd `AfcPrintStartDialogTool.vue#changeLaneMapping`, `mixins/afc.ts#shouldShowAfcDialog` | UI |
 | §6.1 lane actions | **Source**: Mainsail `AfcPanelUnitLane.vue` (`laneReady`), `AfcPanelUnitLaneActions.vue`; Fluidd `AfcCardUnitLane.vue`, `AfcCardUnitLaneActions.vue` | UI |
-| §6.2 commands and who sends them | **Source**: grep of Mainsail `panels/Afc`, `dialogs/Afc*`, `StartPrintDialogAfc*`, `SpoolmanChangeSpoolDialog*`; Fluidd `widgets/afc/**`; H grep of `src/printer/ams_backend_afc.cpp`; button gating in Mainsail `AfcPanelButtons.vue#macros`, `AfcSettingsDialog*.vue` and Fluidd `AfcCardButtons.vue#commands`, `#macros`, `dialogs/AfcSettingsDialog*.vue`. Producer mappings from paxx `afc.cfg` and `38-feature-spoollink/.../klipper.cfg`, zmod `zmod_afclite.cfg` and `zmod_afclite.py`, Kiln `plugin.cfg` and `extras/kiln_afclite.py`. "AFC has no `SET_VENDOR`" from grep of AFC `extras/`. Capability tokens are **proposal** | UI; H; paxx; Z; K; AFC |
-| §6.3 C1-C5 | **Proposal**. The facts C1 and C2 state are **source**: Klipper and Kalico `klippy/gcode.py#GCodeDispatch.cmd_default` (unknown command = `respond_info`, no raise), Mainsail and Fluidd `AfcUnitLaneFilamentDialog.vue#setSpool`, Klipper `klippy/gcode.py#_process_commands`, paxx `afc.cfg` `SET_WEIGHT`, H `ams_backend_afc.cpp`. C3 has no precedent: zmod_afclite and Kiln check object names, not command names | UI; Klipper `ee2c6fb`; Kalico `0057b6a`; paxx; H |
-| §6.2 empty `COLOR`/`MATERIAL` | **Source**: AFC `extras/AFC_spool.py#cmd_SET_COLOR` (stores `'#' + COLOR`), `#cmd_SET_MATERIAL`; H `ams_backend_afc.cpp#clear_slot_override`, `#parse_afc_stepper`; zmod_afclite `zmod_afclite.cfg` `[gcode_macro SET_COLOR]`. The SHOULD is **proposal** | AFC; H; Z |
+| §6.2 commands and who sends them | **Source**: grep of Mainsail `panels/Afc`, `dialogs/Afc*`, `StartPrintDialogAfc*`, `SpoolmanChangeSpoolDialog*`; Fluidd `widgets/afc/**`; H grep of `src/printer/ams_backend_afc.cpp`; button gating in Mainsail `AfcPanelButtons.vue#macros`, `AfcSettingsDialog*.vue` and Fluidd `AfcCardButtons.vue#commands`, `#macros`, `dialogs/AfcSettingsDialog*.vue`. Producer mappings from paxx `afc.cfg` and `38-feature-spoollink/.../klipper.cfg`, Z-Mod `zmod_afc.py` (`cmd_*`). "AFC has no `SET_VENDOR`" from grep of AFC `extras/`. Capability tokens are **proposal** | UI; H; paxx; Z; AFC |
+| §6.3 C1-C5 | **Proposal**. The facts C1 and C2 state are **source**: Klipper and Kalico `klippy/gcode.py#GCodeDispatch.cmd_default` (unknown command = `respond_info`, no raise), Mainsail and Fluidd `AfcUnitLaneFilamentDialog.vue#setSpool`, Klipper `klippy/gcode.py#_process_commands`, paxx `afc.cfg` `SET_WEIGHT`, H `ams_backend_afc.cpp`. C3 has no precedent: no shim checks command names | UI; Klipper `ee2c6fb`; Kalico `0057b6a`; paxx; H |
+| §6.2 empty `COLOR`/`MATERIAL` | **Source**: AFC `extras/AFC_spool.py#cmd_SET_COLOR` (stores `'#' + COLOR`), `#cmd_SET_MATERIAL`; H `ams_backend_afc.cpp#clear_slot_override`, `#parse_afc_stepper`; Z-Mod `zmod_afc.py#_write` (empty keeps the slot's value). The SHOULD is **proposal** | AFC; H; Z |
 | §7 current heuristic | **Source**: H `src/printer/printer_discovery_parse.cpp#parse_objects`, `src/printer/ams_backend_afc.cpp#set_discovery` | H |
 | §7 D1-D4 | **Proposal** | |
 | §8 | **Proposal**; `zmod_slot` example from source | |
@@ -523,10 +524,15 @@ maintainer wanted this surface to be ecosystem-wide, not AFC-branded [I from the
 - **Happy Hare.** Writes `laneN` records (`push_lane_data`), with a numeric `filament_id`.
 - **HelixScreen.** Writes `laneN` or `T<n>` (`docs/specs/filament_slots.md`).
 - **Mainsail.** Writes `T<n>` records for Spoolman tool changers (#2510).
-- **KILN_AFCLite** writes no `lane_data`: it reports `lane_data_enabled: false` and leaves the
-  namespace to Kiln OS's own `kiln_lanes` Moonraker component (`kiln_afclite.py`, `bb9fb05`;
-  README).
-- **zmod_afclite.** Re-checks every 15 s (`LANE_DATA_RECHECK`). It writes only where an entry disagrees with Z-Mod, merging `color`/`material` into existing entries found by their `lane` field (including HelixScreen's `T0..T3`), and drops spool-specific keys when the spool changed. It polls every 2 s until the slots settle.
+- **Kiln OS `kiln_lanes`** (Moonraker component, djvalic/kiln-os `258b6f0`) writes `lane1`…`lane4`
+  from the IFS and merges into HelixScreen's records. It doesn't check for AFC: with real AFC
+  installed (afc-kiln), AFC's `T<n>` records and `kiln_lanes`' `lane<n>` records describe the
+  same lanes.
+- **Z-Mod `zmod_color`** (`ZmodColor._publish_lanes`, `z_ad5x` `206c1bd`). On by default
+  (`[zmod_color] orca_lanes`), off while `helix = 1`. Writes `lane<slot>` with `lane`, `material`,
+  `color`, `name` (the material again) and `spool_id`; no `loaded` or `lane_name`. It deletes the
+  record of a slot whose type is unknown (`?`).
+- **zmod_afcplus** (DIEHARDave, add-on to Z-Mod's `zmod_afc`), only while `helix = 1`. Re-checks every 15 s. It writes only where an entry disagrees with Z-Mod, merging `color`/`material` into existing entries found by their `lane` field (including HelixScreen's `T0..T3`), and drops spool-specific keys when the spool changed. It polls every 2 s until the slots settle.
 - **spoolman-lane-sync** (broncosis, `1660093`). Keys are bare `"0"`, `"1"`, …. It writes `material`, `color`, `vendor`, `name`, `remaining_weight`, `setting_id`, and `filament_id`, copied from the Spoolman filament extra `orca_filament_id`. Its README tells users to put Bambu `GF*` codes there, which miss in the Moonraker path because only `BBLPrinterAgent` translates them. It claims the namespace with a top-level `source: "spoolman"` key (`#_claim_source`).
 
 ## 2a. Happy Hare already does much of this
@@ -782,7 +788,7 @@ grepping access patterns, so a read through a renamed variable may be missing.
 | Moonraker file metadata (`referenced_tools`, `filament_colors`, `filament_type`, `filament_name`, `filament_temps`) | **Adopt as-is** | Already upstream in Moonraker. It replaces this draft's earlier `; lane_map` header proposal: a producer can map with no slicer-side write at all |
 | Printer-side automap (`MMU_SLICER_TOOL_MAP` + `AUTOMAP=` strategies) | **Adapt** | The right model for "slicer says what it needs, printer decides which lane". The strategy names become the spec's `automap` vocabulary (§9). The command itself stays Happy Hare's |
 | `MMU_TTG_MAP TOOL= GATE=` vs AFC `SET_MAP LANE= MAP=T` | **Stay compatible with both** | Same intent, two syntaxes, both in use by Mainsail. The spec names the intent (`set_map`) and gives each profile its own syntax (§9) |
-| Spoolman extras `printer_name`/`mmu_gate_map`/`rfid_tag` | **Stay compatible**; don't spread further | A third tag-UID convention beside SpoolLink's `card_uids` (paxx, zmod_afclite, KILN_AFCLite; Part C) and Spoolman's native tags (Spoolman ≥0.27, which paxx's open PR #799 would migrate to). The spec carries tags in `lane_data.tag` and leaves Spoolman storage to each producer |
+| Spoolman extras `printer_name`/`mmu_gate_map`/`rfid_tag` | **Stay compatible**; don't spread further | A third tag-UID convention beside SpoolLink's `card_uids` (paxx, Z-Mod's `zmod_afc`, FF_NFC, LaneTag; Part C) and Spoolman's native tags (Spoolman ≥0.27, which paxx's open PR #799 would migrate to). The spec carries tags in `lane_data.tag` and leaves Spoolman storage to each producer |
 | `gate_*` arrays as a slicer source | **Stay compatible** (bridge table §7a) | Orca already reads them. A producer MAY mirror lanes into them only by publishing a real `mmu` object, which Appendix B advises against |
 | Metadata pre-processor and placeholders | Out of scope | It rewrites G-code for Happy Hare's own tool-change path. Producers that need the same data read Moonraker's file metadata |
 | `T<n>` macro variables `color` / `spool_id` (`update_t_macros`) | **Stay compatible; recommend** | A third existing channel that Mainsail and Fluidd already read per tool. A producer that knows the tool→lane map SHOULD set them the same way: hex color without `#`, and `spool_id` only when the lane is loaded |
@@ -879,7 +885,7 @@ that needs one particular preset names it in `slicer_preset` (§7). A user-made 
   - Orca already reads it with one GET.
   - Moonraker's maintainer recommended it for exactly this.
   - It persists, and it answers while Klippy is down.
-  - Any process can write it: a Klipper extra (AFC, zmod_afclite over HTTP), a Moonraker
+  - Any process can write it: a Klipper extra (AFC, Z-Mod's `zmod_color` over HTTP), a Moonraker
     component (Happy Hare's, our HelixPrint plugin), or an app (HelixScreen).
   - Its weakness is ownership. AFC deletes the namespace on boot, several writers collide, and
     the only schema is PR #1022's unmerged draft. spoolman-lane-sync already claims the namespace with a top-level `source: "spoolman"` key and refuses to write when another source owns it (`#_claim_source`). Part II answers this with a version field and a per-record `writer` field, and treats a namespace-level `source` key as legacy ownership a producer MUST respect.
@@ -931,7 +937,7 @@ lists the options.
 Column key:
 - **Req**: required level for a producer of this profile.
 - **Orca today**: whether `MoonrakerPrinterAgent` in OrcaSlicer 2.5.2 reads the field.
-- **Writers today**: A = AFC `main`, HH = Happy Hare, H = HelixScreen, Z = zmod_afclite,
+- **Writers today**: A = AFC `main`, HH = Happy Hare, H = HelixScreen, Z = Z-Mod (`zmod_color`),
   S = spoolman-lane-sync.
 
 Group 1: fields Orca reads today (the compatibility core).
@@ -941,9 +947,9 @@ Group 1: fields Orca reads today (the compatibility core).
 | `lane` | string (int) | | MUST | Slot index Orca lays out. MUST be a JSON string (Orca drops a numeric `lane`). SHOULD equal the slicer tool number the lane serves (`T<n>` → `"n"`) when a mapping exists. This formalises AFC `main`'s existing meaning and PR #1022's draft ("Current tool mapping"); Happy Hare uses the gate number | yes (required) | A H HH Z S |
 | `material` | string | | MUST | Slicer-matchable type (`PLA`, `PETG-CF`). **Empty means empty lane** in Orca today | yes | A H HH Z S |
 | `color` | string | `#RRGGBB` | MUST if loaded | Primary color. MUST be hex: Happy Hare's W3C names (`red`) don't survive Orca's normalizer | yes | A H HH Z S (Mainsail and S write it without `#`) |
-| `nozzle_temp` | int | °C | SHOULD | Recommended nozzle temp. MUST be a JSON number. Orca sends it as `nozzle_temp_max` | yes | A H HH (default 200 when unset). Z deletes it on a spool change |
-| `bed_temp` | int | °C | SHOULD | MUST be a JSON number | yes | A H HH (from Spoolman). Z deletes it on a spool change |
-| `filament_id` | string | | SHOULD | **Orca filament id** (`OF…`), copied from Orca's library or minted as in §3 from `vendor_name`/`filament_type`/`name`. It names a product, not a preset (§3): a producer MUST NOT write an id that more than one product carries. MUST be a string. A lane linked to a Spoolman spool takes it from the filament extra `orca_filament_id` (SPEC.md §6). A Bambu `GF*` code MUST NOT be written untranslated; Orca's `resources/printers/bambu_filament_ids.json` maps them to `OF…` ids. A numeric value means Spoolman's filament id (Happy Hare's usage); Orca ignores it | yes (string only) | S H (HH numeric) |
+| `nozzle_temp` | int | °C | SHOULD | Recommended nozzle temp. MUST be a JSON number. Orca sends it as `nozzle_temp_max` | yes | A H HH (default 200 when unset) |
+| `bed_temp` | int | °C | SHOULD | MUST be a JSON number | yes | A H HH (from Spoolman) |
+| `filament_id` | string | | SHOULD | **Orca filament id** (`OF…`), copied from Orca's library or minted as in §3 from `vendor_name`/`filament_type`/`name`. It names a product, not a preset (§3): a producer MUST NOT write an id that more than one product carries. MUST be a string. A lane linked to a Spoolman spool takes it from the filament extra `orca_filament_id` (SPEC.md §6). A Bambu `GF*` code MUST NOT be written untranslated; Orca's `resources/printers/bambu_filament_ids.json` maps them to `OF…` ids. A numeric value means Spoolman's filament id (Happy Hare's usage); Orca ignores it | yes (string only) | S H zmod_afcplus (HH numeric) |
 
 Group 2: proposed fields Orca doesn't read yet.
 
@@ -975,7 +981,7 @@ Group 2: proposed fields Orca doesn't read yet.
 | `spool_id` | int\|null | | SHOULD | Spoolman spool id | no | A H HH |
 | `spoolman_filament_id` | int\|null | | MAY | Spoolman filament record id. Happy Hare writes this number into `filament_id`, so a consumer MUST read a **numeric** `filament_id` as this field | no | H (`helix_spoolman_filament_id`), HH (as `filament_id`) |
 | `spool` | object\|null | | MAY | The spool this lane holds, in any tracker: `{"tracker": string, "id": string}`. `tracker` is a short lowercase name for the tracker (`spoolman`, `filaman`, `simplyprint`, …; Part C); the vocabulary is open, and a consumer that doesn't know a name treats the reference as opaque. `id` is that tracker's spool id as a string. When `tracker` is `spoolman`, `id` MUST equal `spool_id` written as a string. null when the lane references no spool | no | — |
-| `tag` | object\|null | | MAY | `{"format": "openprinttag"\|"openspool"\|"bambu"\|"creality"\|"snapmaker"\|"tigertag"\|"uid", "uid": hex string, "data": object}` | no | — |
+| `tag` | object\|null | | MAY | `{"format": "openprinttag"\|"openspool"\|"bambu"\|"creality"\|"snapmaker"\|"tigertag"\|"opentag3d"\|"anycubic"\|"qidi"\|"elegoo"\|"spoolease"\|"uid", "uid": hex string, "data": object}` | no | — |
 | `scan_time` | string | ISO-8601 UTC | SHOULD | Last write | no | A H |
 
 **V-S1.** Vendor-specific keys MUST carry a `<vendor>_` prefix, as in the Part A §8.
@@ -1004,9 +1010,8 @@ what a user sees. "0" and "1" give the base of each number.
 | Happy Hare | `lane<gate>`, `lane0`… (0) | gate, `"0"`… | gates `0`…`num_gates-1` (0); `ttg_map` identity by default | "Gate 0", "T0 (Gate0)" (0) | `components/mmu_server.py#push_lane_data`; `config/base/mmu.cfg` `default_ttg_map`; `config/macros/mmu_software.cfg` (`91a31dc`) |
 | Mainsail (Spoolman tool changers) | `T<n>` (0) | `n` | tools | `T0`… | Mainsail #2510 |
 | spoolman-lane-sync | `"0"`, `"1"`… (0) | `"0"`… | none | none | `1660093` |
-| zmod_afclite | `lane<slot>`, `lane1`…`lane4` (1) | slot − 1, `"0"`… | `AFC_lane E0`…`E3` (0) | Mainsail's panel shows `E0`…; zmod calls the ports 1–4 | `zmod_afclite.py` (`dabe447`) |
-| Z-Mod's built-in AFC emulation | `lane0`…`lane3` in its docs (0); see the note below | `"0"`… | `AFC_lane lane1`…`lane16` (1) | `lane1`…; "spool №1"… | zmod `docs/en/AD5X.md`, `docs/en/C5PRO.md` (`2bda2fa`); `z_ad5x` `.shell/zmod_afc.py` (`206c1bd`) |
-| Kiln OS `kiln_lanes` (KILN_AFCLite writes none) | `lane1`…`lane4` (1) | slot − 1, `"0"`… | KILN_AFCLite `E0`…`E3` (0) | "IFS slot 1–4", "T0 = slot 1" | `moonraker/components/kiln_lanes.py`, `docs/orcaslicer.md` (djvalic/kiln-os `258b6f0`); `extras/kiln_afclite.py` (`bb9fb05`) |
+| Z-Mod's built-in AFC emulation | `lane1`…`lane16` (1), written by `zmod_color` (its docs say `lane0`…) | `"0"`… | `AFC_lane lane1`…`lane16` (1) | `lane1`…; "spool №1"… | zmod `docs/en/AD5X.md`, `docs/en/C5PRO.md` (`2bda2fa`); `z_ad5x` `.shell/zmod_afc.py`, `.shell/zmod_color.py#_publish_lanes` (`206c1bd`) |
+| Kiln OS `kiln_lanes` | `lane1`…`lane4` (1) | slot − 1, `"0"`… | no AFC objects; with afc-kiln, AFC's `lane1`…`lane4` (1) | "IFS slot 1–4", "T0 = slot 1" | `moonraker/components/kiln_lanes.py`, `docs/orcaslicer.md` (djvalic/kiln-os `258b6f0`) |
 | HelixScreen | `lane<i+1>` on filament systems (1), `T<i>` on tool changers (0) | `i`, `"0"`… | the backend's own | the backend's own | `src/printer/filament_slot_override_store.cpp#format_lane_key`, `docs/specs/filament_slots.md` §4 |
 | paxx U1 AFC-Lite | writes none (`lane_data_enabled = False`) | | `AFC_lane E0`…`E3`, `lane: 0`… (0) | `E0`… in the panels | `31-feature-afc-lite/.../AFC.py`, `afc.cfg` (`a6423a8`) |
 
@@ -1029,15 +1034,15 @@ appears as A1 (`MoonrakerPrinterAgent.cpp#fetch_moonraker_filament_data`, `#buil
 that `lane`, in the namespace's alphabetical key order, so `T0` hides `lane1`. A stale record
 under the key that sorts first therefore hides the live one.
 
-Note on Z-Mod: its docs give `lane0`… keys while its own AFC lanes are named `lane1`…, and the
-`zmod_afc.py` read reports `lane_data_enabled: False` with no database writes. The module that
-writes those records was not found in source, so that row's key is from the docs only.
+Note on Z-Mod: its docs give `lane0`… keys, but the code writes `lane1`… (`zmod_color.py`
+`_publish_lanes`, l.905, which deletes an old `lane0` record once). `zmod_afc.py` itself reports
+`lane_data_enabled: False` and writes nothing.
 
 What the survey shows:
 - **The `lane` value is 0-based everywhere.** Every writer, and Orca's reader, agree.
 - **Tool numbers are 0-based everywhere** (`T0`).
 - **Record keys split.** 1-based `laneN`: AFC `main` (by its templates' lane names),
-  zmod_afclite, `kiln_lanes`, HelixScreen. 0-based: Happy Hare, Z-Mod's docs,
+  Z-Mod, `kiln_lanes`, HelixScreen. 0-based: Happy Hare, Z-Mod's docs,
   spoolman-lane-sync. `T<n>`: AFC `DEV`, Mainsail, HelixScreen on tool changers.
 - **Users mostly see 1-based slots** (AFC `lane1`, Orca "A1", CFS and QIDI "1A", AD5X "spool
   №1", U1 "Feeder 1") and 0-based tools. Happy Hare is the exception: it shows "Gate 0".
@@ -1197,7 +1202,7 @@ Smallest first. Items 1 and 2 also work for every existing `lane_data` writer.
 | §4 write paths | **Sourced**: `DeviceManager.cpp` (`ams_filament_setting`, `extrusion_cali_sel`), `DevMappingNozzle.cpp`, `CrealityPrint.cpp#start_print_commands`, `MoonrakerPrinterAgent.cpp#handle_request`, `PrinterAgentPluginCapability.cpp`. The G-code header alternative is a **proposal** |
 | §5 transport analysis | Facts **sourced** as tagged; conclusions **inference** |
 | §6-§10 | **Proposal**. The Group 1 fields in §7, and their Orca and writer columns, are sourced |
-| §7 V-S3 key survey | **Sourced** at the revisions in its tables (read 2026-11-24): AFC `5ea84ea` and `DEV` `e0dd6ad`; Happy Hare `91a31dc`; Orca `v2.5.2` `f92a7c065c`; zmod_afclite `dabe447`; Z-Mod `2bda2fa` docs and `z_ad5x` `206c1bd`; Kiln OS `258b6f0`; KILN_AFCLite `bb9fb05`; paxx `a6423a8`; DrA1ex/ff5m `ed884d1`; qidi-community/Plus4-Wiki `d034a4d`. Rows marked [I] take the screen label from HelixScreen's docs, not a vendor source. The options are **proposal** |
+| §7 V-S3 key survey | **Sourced** at the revisions in its tables (read 2026-11-24): AFC `5ea84ea` and `DEV` `e0dd6ad`; Happy Hare `91a31dc`; Orca `v2.5.2` `f92a7c065c`; Z-Mod `2bda2fa` docs and `z_ad5x` `206c1bd`; Kiln OS `258b6f0`; paxx `a6423a8`; DrA1ex/ff5m `ed884d1`; qidi-community/Plus4-Wiki `d034a4d`. Rows marked [I] take the screen label from HelixScreen's docs, not a vendor source. The options are **proposal** |
 | §11 | **Proposal** |
 | ACE, Prusa MMU, OpenPrintTag, OpenSpool in Orca | **Sourced absence** (grep of `main`, issue search). Prusa's own slicer and Connect were not examined |
 | §2a Happy Hare facts | **Sourced**: Happy-Hare `main` `70aa90fb`: `components/mmu_server.py` (header, remote methods, `push_lane_data`, pre-processor regexes), `extras/mmu/commands/mmu_slicer_tool_map.py`, `mmu_gate_map.py`, `mmu_ttg_map.py`, `mmu_gate_maps.py#get_status`, `mmu_controller.py` status, `mmu_constants.py` (AUTOMAP, Spoolman modes), `mmu_gate_maps.py#restore_automap_option`, `config/macros/mmu_misc.cfg` (`MMU_REMAP_TTG`); Moonraker PR #962 diff + `file_manager/metadata.py` and commit `5b92e52e`; Mainsail `StartPrintDialogMmu.vue`, `MmuEditTtgMapDialog.vue`; Orca PR #12307 (title only) |
@@ -1284,7 +1289,8 @@ or "Not traced", which are listed under Open questions with everything else not 
 | **Mainsail** (tool changers) | `SET_GCODE_VARIABLE MACRO=T<n> VARIABLE=spool_id`; `SAVE_VARIABLE t<n>__spool_id` | `lane_data` key `T<n>`: `lane`, `color` (Spoolman `color_hex`, **no `#`**), `material`, `bed_temp`, `nozzle_temp` | — | Mainsail `03a4d7b1` `src/components/dialogs/SpoolmanChangeSpoolDialog.vue#setSpool`, `#setMacroVariable`; from PR #2510 (`0fe8db42`, 2026-06-16) |
 | **spoolman-lane-sync** (broncosis) | Reads save_variables `t<n>__spool_id` (Mainsail's convention), else Spoolman `location` = `T<n>` | `material`, `color` (uppercase, no `#`), `vendor`, `name`, `remaining_weight`; `filament_id` and `setting_id` from Spoolman filament extras **`orca_filament_id`**, **`orca_setting_id`** | — | broncosis/spoolman-lane-sync `1660093` `spoolman_lane_sync.py#_spool_to_lane`. It **claims the namespace** with a `lane_data` key `source` = `"spoolman"` and exits if another source holds it (`#_claim_source`) |
 | **SpoolLink** (paxx U1) | Per-channel spool ids in Klipper's `print_task_config.filament_spool_id` (`_ptc_spool_ids`). `_sync_active_spool` pushes the current extruder's channel id into Moonraker's single active spool | Not traced for this survey (Open question 5) | Spoolman spool extra **`card_uids`** (`_parse_card_uids`). Remote methods `spoollink_resolve_spool`, `spoollink_unlink_card` | SnapmakerU1-Extended-Firmware `417e6394` `overlays/firmware-extended/38-feature-spoollink/.../components/spoollink.py`. Open PRs #767 (2026-10-06) and #799 (2026-10-19) move to Spoolman native tags on ≥0.27.0; #799 migrates `card_uids` once. Neither is merged |
-| **zmod_afclite / KILN_AFCLite** | `save_variables` `zmod_afclite_spool_<lane>` / `kiln_afclite_spool_<lane>` | Spool color/material written into the firmware slot | `card_uids`, the SpoolLink convention | DIEHARDave/zmod_afclite `375c86d` `zmod_afclite.py` (`SPOOL_VARIABLE_PREFIX = "zmod_afclite_spool_"`, `CARD_UIDS_FIELD = "card_uids"`, `SAVE_VARIABLE`) and KILN_AFCLite `67aae0d` `extras/kiln_afclite.py` (`SPOOL_VARIABLE_PREFIX = "kiln_afclite_spool_"`, `CARD_UIDS_FIELD`); both READMEs. KILN writes the slot through `IFS_SET_MATERIAL` (README) |
+| **Z-Mod** `zmod_afc` | `save_variables` `afc_spool_lane<N>` (`SET_SPOOL_ID`). Cleared when the slot's color or material changes or the slot is empty for 30 s. The active lane's spool goes to `spoolman_set_active_spool` | Spool color/material written into the firmware slot | `SET_SPOOL_ID CARD_UID=` looks the UID up in `card_uids`, the SpoolLink convention; native tags not read | `z_ad5x` `206c1bd` `.shell/zmod_afc.py` (`_set_spool`, `_check_spools`, `_card`) |
+| **FF_NFC, LaneTag** (DIEHARDave; tag readers, not producers) | Hand the spool to the producer (`SET_SPOOL_ID`) | — | `card_uids` and Spoolman's native tags; a tag counts as bound only when both agree | DIEHARDave/FF_NFC `python/ffnfc/spoolman.py`, DIEHARDave/LaneTag `src/spoolman.cpp` |
 | **HelixScreen** | `lane_data` `spool_id` (its own records) and Spoolman via `server.spoolman.proxy` | Spoolman filament extra **`pressure_advance`** read as pressure advance. `filament_id` comes from its own filament catalog; reading Spoolman's `orca_filament_id` is planned (prestonbrown/helixscreen#2002) | `TagReading::spoolman_id`, set only for an id a tag declares | helixscreen origin/main `11cf6f0f29` `src/api/moonraker_spoolman_api.cpp`, `include/spoolman_types.h#kSpoolmanPaExtraKey`, `include/ams_tag_reading.h#TagReading`, `include/tag_spool_link.h#TagSpoolSighting`; `docs/specs/filament_slots.md` |
 
 Notes:
@@ -1334,8 +1340,8 @@ Readers that decode several of these (secondary evidence of the layouts):
 - **OpenSpool.** `version` has never gone past `"1.0"`: every commit of `docs/rfid.md` that
   shows a version shows `"1.0"` (the first, `301ff4bd`, has no version key), the firmware rejects anything else (`firmware/bambu.h`), and openspool.io
   documents only 1.0.
-- **zmod_afclite and KILN_AFCLite.** Their spool-link storage is confirmed in code (the
-  link table above).
+- **Z-Mod, FF_NFC, LaneTag.** Their spool-link storage is confirmed in code (the link table
+  above).
 - **SimplyPrint lookup.** `resolve/FindBySearch`'s `nfc_id` "matches a tag's serial number, with
   or without colons", so the lookup key is the chip UID (apidocs, fetched 2026-10-27).
 
