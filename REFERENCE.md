@@ -42,9 +42,10 @@ call on, using `null` (or the type's empty value) when there's no value.
 **R3.** A producer SHOULD register its objects at config load or `klippy:connect`, before
 `klippy:ready`.
 - Moonraker clients read `objects/list` once, at connect.
-- An object added later appears only after a client reconnects. Z-Mod's `zmod_afc` registers
-  at `klippy:ready`, and with an IFS Jacker (8-16 channels) it learns the lane count about 30 s
-  after start. So it registers the lane count saved last time (`afc_lanes`) straight away.
+- An object added later appears only after a client reconnects. Z-Mod's `zmod_afc` adds its
+  objects at `klippy:ready`; its G-code commands register at config load, even when `afc` is 0.
+  With an IFS Jacker (8-16 channels) it learns the lane count about 30 s after start, so it
+  adds objects for the lane count saved last time (`afc_lanes`) straight away.
 
 **R4.** Colors are strings `#RRGGBB` (uppercase or lowercase hex). Consumers SHOULD accept
 `RRGGBB` without `#` and an 8-digit `RRGGBBAA`, ignoring alpha.
@@ -119,11 +120,14 @@ not AFC. A new producer gets no such allowance.
 - The panel appears in both UIs exactly when an object named `AFC` exists
   (Mainsail `store/gui/getters.ts`; Fluidd `printer/getters.ts#getSupportsAfc`).
 - A producer publishing this profile MUST publish `AFC`, one `AFC_unit <unit>` per unit, and
-  one `AFC_lane <lane>` per lane.
+  one `AFC_lane <lane>` per lane. Z-Mod's `zmod_afc` publishes `AFC_IFS <unit>` instead (Type
+  `IFS`; units `IFS`, or `IFS_1`, `IFS_2` and so on with an IFS Jacker).
 - A producer MUST NOT publish `AFC` if another object by that name exists. It MUST check at
   `klippy:connect` and stand down without error. Z-Mod's `zmod_afc` doesn't check: it publishes
-  only while Z-Mod's save variable `afc` is 1, and add-ons that install real AFC on Z-Mod switch
-  it off. Standing down is the proposal.
+  only while Z-Mod's save variable `afc` is 1. zmod_afc_full, which installs real AFC on Z-Mod,
+  leaves `afc` alone and stands zmod_afc down at runtime: it unregisters zmod_afc's commands and
+  removes its `klippy:ready` handler, so zmod_afc's objects are never added. Standing down is the
+  proposal.
 
 ### 5.2 `AFC`
 
@@ -135,7 +139,7 @@ Column key:
 
 | Key | Type | Req | Meaning | Pub | Read by |
 |---|---|---|---|---|---|
-| `units` | list[string] | MUST | Each entry is `"<Type> <unit>"`. The UI looks up object `AFC_<Type with '_' removed> <unit>` case-insensitively. Status-only producers MUST use Type `unit`, giving `AFC_unit <unit>`. AFC ships the Types `Box_Turtle`, `HTLF`, `Night_Owl`, `Quattro_Box`, `Toolchanger`, `Claymore`, `EMU`, `ViViD` and `OpenAMS`. The first four get a brand icon in both UIs, which strip `_` and ignore case when picking it. A producer that isn't that product MUST NOT use any spelling of an AFC Type | AFC P Z | M F H |
+| `units` | list[string] | MUST | Each entry is `"<Type> <unit>"`. The UI looks up object `AFC_<Type with '_' removed> <unit>` case-insensitively. Status-only producers MUST use Type `unit`, giving `AFC_unit <unit>`; Z-Mod's `zmod_afc` uses Type `IFS` (entries `IFS IFS`, or `IFS IFS_1`… with an IFS Jacker), giving `AFC_IFS <unit>`. AFC ships the Types `Box_Turtle`, `HTLF`, `Night_Owl`, `Quattro_Box`, `Toolchanger`, `Claymore`, `EMU`, `ViViD` and `OpenAMS`. The first four get a brand icon in both UIs, which strip `_` and ignore case when picking it. A producer that isn't that product MUST NOT use any spelling of an AFC Type | AFC P Z | M F H |
 | `lanes` | list[string] | MUST | All lane names | AFC P Z | M F H |
 | `extruders` | list[string] | MUST | `AFC_extruder` names. Status-only: `[]` (with an extruder listed, the UI draws sensors the producer can't report) | AFC P Z | M F H |
 | `hubs` | list[string] | MUST | `AFC_hub` names. Status-only: `[]` | AFC P Z | M F H |
@@ -167,8 +171,8 @@ Status-only producers MUST use `AFC_lane`.
 | `unit` | string | | MUST | Unit name (no Type prefix). No consumer reads it today; units come from `AFC_<Type> <unit>.lanes` | AFC P Z | — |
 | `lane` | int | | MUST | Index within the unit, with AFC's meaning (§8 V2): the number after the colon in the lane's `unit:` option (`unit: Turtle_1:1`), so 1-based in AFC's shipped templates, and 0 when the option gives none. paxx sends 0-based indices, so it differs from AFC today; Z-Mod sends the 1-based slot. No consumer reads it today | AFC P Z | — |
 | `extruder` | string\|null | | MUST | The extruder this lane feeds. In AFC this is the lane's `AFC_extruder` name, which the UIs match against `AFC.extruders`; paxx sends the Klipper extruder (`extruder`, `extruder1`, …); Z-Mod sends `null` | AFC P Z | M F H |
-| `hub` | string\|null | | SHOULD | Status-only: `null` | AFC | H |
-| `buffer` | string\|null | | SHOULD | Status-only: `null` | AFC | M F |
+| `hub` | string\|null | | SHOULD | Status-only: `null` | AFC Z | H |
+| `buffer` | string\|null | | SHOULD | Status-only: `null` | AFC Z | M F |
 | `map` | string\|list[string]\|null | | MUST | Slicer tool(s) this lane serves (`"T0"`). `"NONE"` or null = unmapped | AFC P Z | M F H |
 | `load` | bool | | MUST | Filament at the lane's load sensor | AFC P Z | M F H |
 | `prep` | bool | | MUST | Filament at the prep sensor. Status-only: same as `load`. The UI calls a lane ready when `load && prep` | AFC P Z | M F H |
@@ -176,18 +180,20 @@ Status-only producers MUST use `AFC_lane`.
 | `loaded_to_hub` | bool | | SHOULD | Status-only: `false` | AFC P Z | H |
 | `material` | string | | MUST | Material type; `""` when unknown (**not** `"NONE"`) | AFC P Z | M F H |
 | `color` | string | `#RRGGBB` | MUST | §R4. `""` when unknown | AFC P Z | M F H |
-| `weight` | number | g | MUST | Remaining filament. **MUST be > 0**. Both UIs' filament dialogs start the weight field at this value and keep Save disabled while the field is 0, so with no weight the user has to type one on every edit (§6.3 C2). A producer that doesn't measure weight SHOULD report a configurable default (zmod and Kiln: 1000) | AFC Z (Z: 1000 g when unset) | M F H |
+| `weight` | number | g | MUST | Remaining filament. **MUST be > 0**. Both UIs' filament dialogs start the weight field at this value and keep Save disabled while the field is 0, so with no weight the user has to type one on every edit (§6.3 C2). A producer that doesn't measure weight SHOULD report a configurable default (zmod_afc: 1000) | AFC Z (Z: 1000 g when unset) | M F H |
 | `initial_weight` | number\|null | g | SHOULD | Full spool | AFC | M F H |
 | `spool_id` | int\|null | | MUST | Spoolman spool id, null when none (paxx sends `0`) | AFC P Z | M F H |
-| `filament_name` | string | | SHOULD | Display name; `""` when unknown. MUST be present from the first call (§R2); paxx, zmod and Kiln omit it conditionally | AFC P | M F H |
-| `extruder_temp` | int\|null | °C | SHOULD | | AFC | F H |
+| `filament_name` | string | | SHOULD | Display name; `""` when unknown. MUST be present from the first call (§R2); paxx omits it conditionally and zmod_afc never sends it | AFC P | M F H |
+| `extruder_temp` | int\|null | °C | SHOULD | Z sends `null` | AFC Z | F H |
 | `bed_temp` | int\|null | °C | MAY | | AFC | F H |
 | `runout_lane` | string\|null | | SHOULD | Backup lane, `"NONE"`, or (paxx) `"AUTO"` for firmware-managed endless spool | AFC P Z | M F H |
 | `status` | string | | SHOULD | §4.2 | AFC P Z | H |
 | `filament_status`, `filament_status_led` | string | | MAY | | AFC P Z | H |
-| `buffer_status`, `dist_hub`, `remember_spool`, `multi_color_hexes`, `td1_td`, `td1_color`, `td1_scan_time`, `selector`, `endstops` | various | | MAY | Real-hardware fields; status-only producers SHOULD omit them entirely (absent from the first call) | AFC | M F (`dist_hub`, `td1_td`, `td1_color`); H (all) |
+| `buffer_status`, `dist_hub`, `remember_spool`, `multi_color_hexes`, `td1_td`, `td1_color`, `td1_scan_time`, `selector`, `endstops` | various | | MAY | Real-hardware fields; status-only producers SHOULD omit them entirely (absent from the first call). Z sends `buffer_status: null` and `dist_hub: 0` | AFC Z | M F (`dist_hub`, `td1_td`, `td1_color`); H (all) |
 
 ### 5.4 `AFC_unit <unit>`
+
+Z-Mod's `zmod_afc` publishes these keys on `AFC_IFS <unit>` (§5.1).
 
 | Key | Type | Req | Meaning | Pub | Read by |
 |---|---|---|---|---|---|
@@ -233,7 +239,7 @@ All commands take `LANE=<lane>` (R5). Each row names the capability token that a
 | `CHANGE_TOOL LANE=` | `load` | M F (lane Load; extruder settings dialog) H. No UI sends it at print start | Load the lane into the toolhead, unloading another first if needed | `AUTO_FEEDING LOAD=1` | `[zmod_afc] load` template, default `IN_ZCOLOR SLOT={slot} NAPR=0` |
 | `TOOL_UNLOAD [LANE=]` | `unload` | M F (always with `LANE`) H (without `LANE` when no lane is picked) | Unload from the toolhead; without `LANE`, the loaded lane | `AUTO_FEEDING UNLOAD=1` | `unload` template, default `IN_ZCOLOR SLOT={slot} NAPR=1`; without `LANE`, the active slot |
 | `LANE_UNLOAD LANE=` | `eject` | M F (Eject) H | Retract the lane's filament out of the unit | `AUTO_FEEDING UNLOAD=1` | as unload |
-| `SET_COLOR LANE= COLOR= [COLORS=] [COLOR_MODE=]` | `set_color` | M F H | Set lane color. An empty `COLOR` SHOULD clear the color. `COLORS` is a comma-separated `#RRGGBB` list (2 or more) with `COLOR` equal to its first entry, and `COLOR_MODE` is `gradient` or `coaxial`; a producer that stores one color keeps `COLOR` and ignores both. Sending `COLOR` alone returns the lane to one color. Real AFC then stores a bare `#`, which HelixScreen reads as no color, and HelixScreen's lane Clear sends `SET_COLOR COLOR=` for exactly that. zmod_afclite keeps the color instead | `SET_PRINT_FILAMENT_CONFIG` | slot color through `zmod_color` (or the stock screen's `/control`), snapped to the C5 Pro palette; empty keeps the color |
+| `SET_COLOR LANE= COLOR= [COLORS=] [COLOR_MODE=]` | `set_color` | M F H | Set lane color. An empty `COLOR` SHOULD clear the color. `COLORS` is a comma-separated `#RRGGBB` list (2 or more) with `COLOR` equal to its first entry, and `COLOR_MODE` is `gradient` or `coaxial`; a producer that stores one color keeps `COLOR` and ignores both. Sending `COLOR` alone returns the lane to one color. Real AFC then stores a bare `#`, which HelixScreen reads as no color, and HelixScreen's lane Clear sends `SET_COLOR COLOR=` for exactly that. zmod_afc keeps the color instead | `SET_PRINT_FILAMENT_CONFIG` | slot color through `zmod_color` (or the stock screen's `/control`), snapped to the C5 Pro palette; empty keeps the color |
 | `SET_MATERIAL LANE= MATERIAL=` | `set_material` | M F H | An empty `MATERIAL` SHOULD clear the material, as in real AFC; HelixScreen's Clear sends `SET_MATERIAL MATERIAL=` | ✓ | ✓ (+ picker); empty keeps the material |
 | `SET_WEIGHT LANE= WEIGHT=` | `set_weight` | M F H | Persist the weight. `WEIGHT=0` returns to the default | **raises** | ✓ |
 | `SET_SPOOL_ID LANE= SPOOL_ID=` | `set_spool_id` | M F H | Bind or clear (empty or 0) a Spoolman spool | (SpoolLink) | ✓ (+`CARD_UID`) |
