@@ -134,7 +134,8 @@ the model (REFERENCE.md Part B §7a).
 
 A tag reader that is not the producer MAY publish the same `tags` object in a Klipper object of
 its own named `lane_tags <name>`, with lanes named as the producer names them. Consumers find it
-by that prefix and read it like the producer's.
+by that prefix and read it like the producer's. The object also names its own commands for
+settling a pending tag, `assign` (takes `LANE=`) and `cancel`, since Klipper commands are global.
 
 #### 2.5 Filament box environment
 
