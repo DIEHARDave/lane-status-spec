@@ -248,7 +248,7 @@ A lane points at a spool; it does not copy a tracker's data model.
 - **The slicer id lives on the tracker's filament.** In Spoolman, OrcaSlicer's `filament_id` is
   a filament extra field with the key `orca_filament_id`, the key spoolman-lane-sync already
   uses. It goes on the filament, not the spool, because the id names a product. Spoolman stores
-  extra values JSON-encoded, so the text field holds `"\"OGFL99\""`.
+  extra values JSON-encoded, so the text field holds `"\"OFDSrzZ8\""`.
   - A producer whose lane references a Spoolman spool SHOULD copy the filament's
     `orca_filament_id` into `filament_id`. It takes precedence over an id the producer derives
     on its own, such as from a built-in catalog, because the tracker wins on identity.
