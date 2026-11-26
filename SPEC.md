@@ -24,8 +24,8 @@ pick the right filament profile for each lane.
 
 Multi-material printers keep lane state in many different shapes, and nothing outside the
 vendor's own screen can see what is loaded. The web UIs understand two systems, AFC and Happy
-Hare, so firmware modders impersonate AFC: paxx (Snapmaker U1), zmod_afclite and KILN_AFCLite each
-ship a module that reverse-engineers the Mainsail and Fluidd panels. They disagree with each
+Hare, so firmware modders impersonate AFC: paxx (Snapmaker U1) and Z-Mod (Flashforge AD5X and
+Creator 5 Pro, its built-in `zmod_afc`) each ship a module that reverse-engineers the Mainsail and Fluidd panels. They disagree with each
 other and with AFC, and a screen can't tell them from real hardware without guessing.
 
 Slicers get little. OrcaSlicer 2.5.2, the current release, reads six fields from Moonraker's
@@ -92,7 +92,7 @@ producer's own name, config and docs MUST NOT present it as AFC.
 
 Outside those object and command names, a component that is not AFC, producer or not, MUST NOT use "AFC" in its
 module name, config section, package name or UI strings. Producers whose names already contain
-it, such as zmod_afclite and KILN_AFCLite, MAY keep them for a transition so that existing user
+it, such as Z-Mod's `zmod_afc` and paxx's AFC-Lite, MAY keep them for a transition so that existing user
 configs keep working. Such a producer SHOULD move to a name without "AFC": publish under the new
 name, accept the old config section as a deprecated alias for at least one release, and say
 plainly in its docs that it is not AFC.
@@ -123,7 +123,7 @@ first status (section 2.2):
 
 | Key | Type | Meaning |
 |---|---|---|
-| `tags.readers` | object | Reader name to `{type, alive, lanes}`: `type` is the chip (`rc522`, `pn532`, `pn7160`, ...), `alive` whether it answers, `lanes` the lanes it serves. One reader MAY serve several lanes; a shared reader the user holds tags up to serves none |
+| `tags.readers` | object | Reader name to `{type, alive, lanes}`: `type` is the chip (`rc522`, `pn532`, `pn5180`, `pn7160`, ...), `alive` whether it answers, `lanes` the lanes it serves. One reader MAY serve several lanes; a shared reader the user holds tags up to serves none |
 | `tags.lanes` | object | Lane to `{present, uid}`: whether a tag is on that lane's reader now, and the UID last read there (`null` if none) |
 | `tags.pending` | object or null | A tag read on a shared reader and not yet assigned to a lane: `{uid, spool}`, with `spool` as in section 6, or `null` |
 
@@ -301,7 +301,7 @@ Consumers ignore unknown keys. Vendor-specific keys MUST be prefixed `<vendor>_`
 ## Prior art
 
 AFC-Klipper-Add-On; Happy Hare (`mmu` object, `lane_data` writer, Moonraker PR #962 file
-metadata); paxx's U1 AFC-Lite; zmod_afclite and KILN_AFCLite; Moonraker PR #1022; OrcaSlicer's
+metadata); paxx's U1 AFC-Lite; Z-Mod's built-in AFC emulation (`zmod_afc`); Moonraker PR #1022; OrcaSlicer's
 Moonraker agent and its `lane_data` documentation; spoolman-lane-sync's `source` key; Spoolman's
 native tags (v0.27.0). Each is described from source in REFERENCE.md.
 
@@ -332,6 +332,6 @@ native tags (v0.27.0). Each is described from source in REFERENCE.md.
 | Happy Hare maintainers | The bridge in REFERENCE.md Part B §7a and the `lane_data` fields borrowed from Happy Hare |
 | Moonraker maintainers | `lane_data` as a documented namespace (question 6) |
 | OrcaSlicer maintainers | Section 5 and REFERENCE.md Part B §11 |
-| Shim authors (paxx, zmod_afclite, KILN_AFCLite) | Sections 2.3 and 3 against your modules |
+| Shim authors (paxx, Z-Mod) | Sections 2.3 and 3 against your modules |
 | Spool tracker authors | Section 6 and REFERENCE.md Part C |
 | Mainsail, Fluidd, KlipperScreen and touchscreen authors | Sections 2 and 4 |
